@@ -1,0 +1,50 @@
+# Dependabot version updates (§9's dependency scanning).
+#
+# What is known, measured rather than assumed. **Version updates** cost nothing in
+# Actions minutes and open a pull request at most on the schedule below; GitHub reads
+# this file only from the default branch, so it stays inert until it is merged.
+# **Dependabot alerts** do not work on this repository today: the API answers
+# 403 "Dependabot alerts are disabled for this repository", and the switch for that
+# lives behind GitHub Advanced Security on a private plan. That is why the
+# vulnerability gate is the osv-scanner job in security.yml, which reads a CycloneDX
+# SBOM built by Maven and needs no GitHub feature at all. The two are not redundant:
+# Dependabot tells you a newer version exists, OSV tells you whether the version you
+# resolved is unsafe.
+#
+# The cost version updates do have is indirect and worth naming: every pull request it
+# opens triggers ci.yml and security.yml, so an unbounded bot could spend the monthly
+# minutes on version bumps. `open-pull-requests-limit` is the throttle, grouped
+# updates are the reduction, and both are set deliberately low.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /services/api
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Asia/Kolkata
+    # Five open bump PRs at a time, for a two-person company, is generous. The
+    # default of 5 is kept rather than raised: a Spring Boot minor-line change is
+    # not something to merge in bulk.
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # One PR per ecosystem-and-kind rather than one per artifact: 124 resolved
+      # components against 5 open PRs needs grouping to stay reviewable.
+      spring-boot:
+        patterns:
+          - org.springframework*
+      junit:
+        patterns:
+          - org.junit*
+          - org.mockito*
+          - org.assertj*
+  # npm joins this file in the same pull request as apps/web's package-lock.json:
+  # a directory entry whose lockfile does not exist is a config line that silently
+  # does nothing, and pretending to watch a dependency set that is not there is the
+  # false green this repository has already closed twice.
