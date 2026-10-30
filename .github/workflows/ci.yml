@@ -47,7 +47,7 @@
 # * One Maven cache *key*, shared with security.yml, so a job restores the Spring Boot
 #   graph instead of re-downloading it. GitHub still stores several entries under that
 #   key, and more than one key: the key hashes services/api/pom.xml, so every dependency
-#   edit mints a new one. Measured at seven entries under four keys, 470 MB, inside the
+#   edit mints a new one. Measured at ten entries under five keys, 684 MB, inside the
 #   separate 10 GB cache allowance, and expiring after 7 days of non-use. A new key costs
 #   one download rather than a rebuild — `unit` ran 54 s on the first commit after the
 #   pom changed and 23 s on the next one. Plus a 7-day retention on the only artifact this
