@@ -13,10 +13,10 @@ who has to decide whether to trust a green run.
 | Secrets in history | `ghcr.io/gitleaks/gitleaks:v8.21.2`, `detect --source=/repo --redact` | `security.yml → secrets` | A credential committed in any commit reachable from the checked-out branch, including ones later deleted. |
 | Secrets in the working tree | the same image with `--no-git` | same job | A secret that reached the tree through a merge and never appeared as an added line in a single commit — the gap the history scan leaves. |
 | Scanner self-test | a synthetic GitHub PAT in `RUNNER_TEMP` | same job, first step | The scan silently reading nothing. See [Why the canary exists](#why-the-canary-exists). |
-| Architecture rules | ArchUnit 1.4.1 (`MoneyArchitectureTest`, `ModuleBoundaryTest`) | `ci.yml → unit` | A module reaching into another's internals, `double`/`float` money, an unparseable cursor, a boundary crossed before it is drawn. |
+| Architecture rules | ArchUnit, version declared in `services/api/pom.xml` (`MoneyArchitectureTest`, `ModuleBoundaryTest`) | `ci.yml → unit` | A module reaching into another's internals, `double`/`float` money, an unparseable cursor, a boundary crossed before it is drawn. |
 | Configuration validity | Spring Boot's own binder, in `ApplicationContextIT` | `ci.yml → integration` | A property that cannot be bound, a bean that cannot start, a readiness group naming a health indicator that does not exist. |
-| Database-enforced guarantees | Flyway 12.4.0 CLI + `psql` on `postgres:16` | `database-migrations.yml` | A `UPDATE`/`DELETE`/`TRUNCATE` on `audit_event` that the server allowed, an unclosed `job_key` list, an idempotency key not scoped by tenant, a `business_day` that is not generated. |
-| Version updates | Dependabot (GitHub-side) | `.github/dependabot.yml` | A dependency falling behind. Configured, and inert until that file reaches `main`, because Dependabot reads its configuration only from the default branch. **Dependabot *alerts* do not work here** — observed, not assumed: the API answers 403 "Dependabot alerts are disabled for this repository". The toggle lives in Settings → Code security and analysis, which is a page this repository's token cannot read or write, and on a private GitHub Free repository the feature behind it is a paid one. Vulnerability detection is done by the OSV row above instead, which needs no GitHub feature. |
+| Database-enforced guarantees | the Flyway CLI pinned in `database-migrations.yml`, + `psql` on `postgres:16` | `database-migrations.yml` | A `UPDATE`/`DELETE`/`TRUNCATE` on `audit_event` that the server allowed, an unclosed `job_key` list, an idempotency key not scoped by tenant, a `business_day` that is not generated. |
+| Version updates | Dependabot (GitHub-side) | `.github/dependabot.yml` | A dependency falling behind. Measured working: once the config reached the default branch, GitHub ran `Dependabot Updates` two minutes later and PR #4 (`archunit-junit5` 1.4.1 → 1.5.1) arrived with the full CI attached — which is how a bump gets the OSV and licence gates run against it. **Dependabot *alerts*** are a different feature and do not work here — observed, not assumed: the API answers 403 "Dependabot alerts are disabled for this repository". The toggle lives in Settings → Code security and analysis, which is a page this repository's token cannot read or write, and on a private GitHub Free repository the feature behind it is a paid one. Vulnerability detection is done by the OSV row above instead, which needs no GitHub feature. |
 
 ## Gates
 
@@ -156,6 +156,11 @@ declines to invent them:
    that actually runs.
 5. **Secrets that exist at all** — a short list, each with an owner. Anything on the
    list nobody can name is a finding.
+6. **The two Flyway pins agree.** `services/api/pom.xml` resolves Flyway from the Spring
+   Boot BOM; `.github/workflows/database-migrations.yml` pins `FLYWAY_IMAGE` by hand to
+   match. A Dependabot bump of the Boot line moves the first and not the second, and the
+   migration job would then be validating the schema against rules the deployed
+   application does not run. Compare them whenever a `spring-boot` group PR lands.
 
 ## Reporting a finding
 
