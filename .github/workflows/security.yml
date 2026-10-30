@@ -215,9 +215,25 @@ jobs:
 
           # The one count that is not brittle: zero commits scanned means the
           # traversal read nothing, whatever the history looks like.
+          #
+          # Split on whitespace and take the token before "commits", not a regex over
+          # the line. The regex version was `s/.*([0-9]+) commits? scanned.*/\1/p`, and
+          # with a greedy `.*` it captured only the *last digit*: "10 commits scanned"
+          # parsed as 0, so the guard reported an empty scan the first time this
+          # history reached ten commits — a red build caused by the check, not the code.
           scanned=$(printf '%s\n' "$output" \
-            | sed -nE 's/.*([0-9]+) commits? scanned.*/\1/p' | tail -1)
-          if [ "${scanned:-0}" -lt 1 ]; then
+            | awk '{ for (i = 2; i <= NF; i++) if ($i == "commits" || $i == "commit") print $(i - 1) }' \
+            | tail -1)
+          # Fail closed on a value `[ -lt ]` cannot read: "no commits scanned" yields
+          # the token "no", and `[ no -lt 1 ]` exits 2, which inside an `if` is simply
+          # "not true" — the guard would then pass without checking anything.
+          case ${scanned:-} in
+            '' | *[!0-9]*)
+              echo "gitleaks commit count unreadable (got '${scanned:-<empty>}'); refusing to call that a pass"
+              exit 1
+              ;;
+          esac
+          if [ "$scanned" -lt 1 ]; then
             echo 'gitleaks scanned no commits: a history scan that read nothing is not a pass'
             exit 1
           fi
