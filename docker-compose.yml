@@ -10,8 +10,10 @@
 #   docker compose logs -f api        one service's logs
 #   docker compose down               stop, keep every volume
 #
-# Production is a different file with different jobs:
-#   docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.prod.yml up -d
+# Production is a different file with different jobs — and it needs the root .env
+# named explicitly, because passing files by path moves Compose's project directory
+# to infra/docker/ and the .env next to this file stops being read:
+#   docker compose --env-file .env -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.prod.yml up -d
 
 name: saathi
 
