@@ -1,0 +1,99 @@
+# Saathi — production-shaped override for a single host.
+#
+#   docker compose -f infra/docker/docker-compose.yml \
+#                  -f infra/docker/docker-compose.prod.yml up -d --build
+#
+# This is NOT a deployment strategy. It hardens the same three services for one
+# machine: immutable image tags, no source bind mounts, no published database
+# port, dropped capabilities, read-only filesystems, resource limits. Hosting,
+# managed PostgreSQL, secret storage, TLS termination and multi-node remain
+# OD-10 (System Design §2.2, §16) and nothing here decides them.
+#
+# Build-time note: NEXT_PUBLIC_API_BASE_URL is inlined into the browser bundle,
+# so it must be passed as a build ARG with the real public URL — the runtime
+# environment cannot change it afterwards.
+
+services:
+  api:
+    image: saathi-api:${SAATHI_RELEASE:?set SAATHI_RELEASE to an immutable tag; :latest is not a release}
+    build:
+      target: runtime
+    restart: always
+    # Managed PostgreSQL (OD-10). Set these three in the deployment secret
+    # store; they are deliberately not read from a committed file.
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SAATHI_ENVIRONMENT: prod
+      SPRING_DATASOURCE_URL: ${PROD_DB_URL:?set PROD_DB_URL to the managed PostgreSQL JDBC URL}
+      SPRING_DATASOURCE_USERNAME: ${PROD_DB_USER:?set PROD_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${PROD_DB_PASSWORD:?set PROD_DB_PASSWORD}
+      SERVER_SHUTDOWN: graceful
+    # Grace period, JVM flags and the shutdown-phase timeout are set in
+    # application-prod.yml / api.Dockerfile, where they are actually read —
+    # an env var nothing consumes is worse than no env var.
+    ports:
+      - "${API_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: "1.5"
+    mem_limit: 1200m
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  web:
+    image: saathi-web:${SAATHI_RELEASE:?set SAATHI_RELEASE}
+    build:
+      target: runtime
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:?set PUBLIC_API_BASE_URL to the browser-reachable API origin}
+    restart: always
+    # The dev bind mounts and command override must not survive into production.
+    volumes: !override []
+    command: !override ["node", "server.js"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: "0.5"
+    mem_limit: 320m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # Production uses managed PostgreSQL (OD-10); this container must not start
+  # beside it. Reassigned to a profile nobody enables rather than deleted, so
+  # the development file stays the single definition of the service.
+  postgres:
+    profiles: !override ["dev-only-managed-database-replaces-this"]
+    ports: !override []
+
+  minio:
+    profiles: !override ["dev-only"]
+
+  flyway:
+    profiles: !override ["tools"]
+    environment:
+      FLYWAY_URL: ${PROD_DB_URL:?set PROD_DB_URL}
+      FLYWAY_USER: ${PROD_DB_USER:?set PROD_DB_USER}
+      FLYWAY_PASSWORD: ${PROD_DB_PASSWORD:?set PROD_DB_PASSWORD}
+      # Migrations in production run as a separate, reviewed step — never as a
+      # side effect of a rolling restart.
+      FLYWAY_VALIDATE_ONLY: "true"
+
+networks:
+  saathi_net:
+    name: saathi_prod_net

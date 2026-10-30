@@ -1,0 +1,44 @@
+# --- Node / Next.js ---
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# --- Java / Maven ---
+target/
+*.class
+*.jar
+!**/maven-wrapper.jar
+.mvn/wrapper/maven-wrapper.properties.token
+
+# --- Environment and secrets: never committed ---
+.env
+.env.*
+!.env.example
+
+# --- Local data, backups, logs ---
+backup/
+backups/
+*.dump
+*.sql.gz
+logs/
+*.log
+.docker/
+
+# --- Editors and OS ---
+.idea/
+*.iml
+.vscode/
+.DS_Store
+._*
+Thumbs.db
+
+# --- Tool caches ---
+.eslintcache
+coverage/
+.playwright-mcp/
+site/

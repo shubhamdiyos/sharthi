@@ -1,0 +1,35 @@
+# Build context is the repository root (infra/docker/*.Dockerfile).
+# Everything the images do not need to compile stays out of the context.
+
+.git
+.github
+.idea
+.vscode
+.DS_Store
+
+node_modules
+.next
+out
+dist
+*.tsbuildinfo
+npm-debug.log*
+
+target
+.mvn/wrapper/maven-wrapper.properties.token
+*.class
+
+.env
+.env.*
+!.env.example
+backup
+backups
+*.dump
+*.log
+logs
+
+docs
+*.md
+!apps/web/**/*.md
+!services/api/**/*.md
+
+infra/docker/*.prod.yml

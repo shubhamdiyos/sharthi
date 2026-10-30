@@ -1,0 +1,183 @@
+# Saathi — development stack.
+#
+# Run from the repository root (see ../../docker-compose.yml):
+#   docker compose up -d --build
+#
+# This file is the development topology. It publishes the database port, binds
+# source into the web container for hot reload, and uses a development user for
+# object storage. None of that belongs in production; docker-compose.prod.yml is
+# a separate override and local Compose is not a deployment strategy
+# (System Design §2.2, D12).
+#
+# Secrets are interpolated with ${VAR:?...} on purpose: an unset secret stops
+# the boot rather than starting an app on a default key. Values come from the
+# root .env — copy .env.example and do not commit the result.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: saathi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # WAL/checkpoint tuning is deliberately left at image defaults: a
+      # development container should behave like the managed server it
+      # approximates, not like a benchmark.
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - saathi_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - saathi_net
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      target: runtime
+    image: saathi-api:dev
+    container_name: saathi-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      SAATHI_ENVIRONMENT: ${SAATHI_ENVIRONMENT:-dev}
+      TZ: ${TZ:-Asia/Kolkata}
+      SERVER_PORT: 8080
+      # Inside the network the service name is the host; the published
+      # POSTGRES_PORT is for laptop tools and must not leak in here.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SAATHI_SESSION_SECRET: ${SAATHI_SESSION_SECRET:?set SAATHI_SESSION_SECRET in .env}
+      SAATHI_AUDIT_IP_KEY: ${SAATHI_AUDIT_IP_KEY:?set SAATHI_AUDIT_IP_KEY in .env}
+      SAATHI_OTP_PROVIDER: ${SAATHI_OTP_PROVIDER:-logging}
+      SAATHI_S3_ENDPOINT: ${SAATHI_S3_ENDPOINT:-http://minio:9000}
+      SAATHI_S3_BUCKET: ${SAATHI_S3_BUCKET:-saathi-media}
+      SAATHI_S3_ACCESS_KEY: ${SAATHI_S3_ACCESS_KEY:-}
+      SAATHI_S3_SECRET_KEY: ${SAATHI_S3_SECRET_KEY:-}
+      SAATHI_S3_REGION: ${SAATHI_S3_REGION:-us-east-1}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - saathi_net
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+      target: dev
+    image: saathi-web:dev
+    container_name: saathi-web
+    restart: unless-stopped
+    # Soft dependency: the storefront renders and reports the API as unreachable
+    # rather than refusing to start, which is what the drawn error states are for.
+    depends_on:
+      - api
+    environment:
+      # Compiled into the browser bundle. Non-secret only.
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8080}
+      # Server-side fetch target inside the network. Never exposed to the client.
+      API_BASE_URL: ${API_BASE_URL:-http://api:8080}
+      NODE_ENV: development
+      WATCHPACK_POLLING: "true"
+    command: ["npm", "run", "dev", "--", "-H", "0.0.0.0"]
+    working_dir: /app
+    volumes:
+      - ../../apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    networks:
+      - saathi_net
+
+  # Optional local object storage. Enable with: docker compose --profile storage up -d
+  minio:
+    profiles: ["storage"]
+    # Pin this to a RELEASE tag before anything touches real media (§2.1).
+    image: minio/minio:latest
+    container_name: saathi-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - saathi_s3data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - saathi_net
+
+  # One-shot Flyway CLI. Never starts with `up` (profile "tools"), so the api
+  # container stays the normal migration path.
+  #   docker compose --profile tools run --rm flyway info
+  #   docker compose --profile tools run --rm flyway migrate
+  flyway:
+    profiles: ["tools"]
+    image: flyway/flyway:11-alpine
+    container_name: saathi-flyway
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      FLYWAY_USER: ${POSTGRES_USER}
+      FLYWAY_PASSWORD: ${POSTGRES_PASSWORD}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_BASELINE_ON_MIGRATE: "true"
+      FLYWAY_CONNECT_RETRIES: "20"
+      FLYWAY_CLEAN_DISABLED: "true"
+    command: ["info"]
+    volumes:
+      - ../../services/api/src/main/resources/db/migration:/flyway/sql:ro
+    networks:
+      - saathi_net
+    restart: "no"
+
+networks:
+  saathi_net:
+    name: saathi_net
+    driver: bridge
+
+# Explicit names: these must resolve to exactly saathi_pgdata / saathi_s3data no
+# matter what the project directory is called, so a rename can never look like
+# an empty volume. `docker compose down -v` deletes them — which is why it is
+# not in this file, not in any script, and not in CI (System Design §2.2).
+volumes:
+  saathi_pgdata:
+    name: saathi_pgdata
+    driver: local
+  saathi_s3data:
+    name: saathi_s3data
+    driver: local
