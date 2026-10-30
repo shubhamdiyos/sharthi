@@ -22,9 +22,10 @@
 #     storage on an artifact nobody deploys. Trivy runs in release.yml, where the
 #     image that gets scanned is the image that gets shipped.
 #
-# Cost of one run, measured on its first run: 44 s for `dependencies`, 7 s for
-# `secrets` — under a minute of the two together once the tool images are already on
-# the runner, and 68 MB of Maven cache shared with ci.yml rather than a second copy.
+# Cost of one run, measured across its first three: 39 s for `dependencies` (including
+# the 26 ms licence gate) and 12 s for `secrets`. It restores the Maven cache under the
+# same key ci.yml uses rather than re-downloading the graph; the store keeps several
+# entries under that key, which the separate 10 GB cache allowance absorbs.
 # `workflow_dispatch` is there so a scan can be re-run against an already-pushed
 # commit instead of pushing an empty commit to re-trigger it.
 
