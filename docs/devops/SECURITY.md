@@ -66,8 +66,8 @@ committed literals named `ci-ephemeral-not-a-secret`. They are not credentials,
 because nothing they unlock survives the job: the PostgreSQL instance is a service
 container created and destroyed inside one run on a machine nobody else sees. Making
 CI read a real secret from repository secrets would put a production key in the
-environment of a workflow that runs on every push, including pushes from a fork's
-pull request, where the token is read-only but the logs are not. The rule this
+environment of a workflow that runs on every pull request, including one opened from a
+fork's branch, where the token is read-only but the logs are not. The rule this
 repository follows is the inverse: **CI gets non-values; the real ones stay
 somewhere a deployment workflow can only reach them with an approved environment.**
 
