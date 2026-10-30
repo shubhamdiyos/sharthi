@@ -263,3 +263,10 @@ of it.
   itself is broken, which is treated as a failure on purpose. See SECURITY.md.
 * A run that is cancelled rather than failed → the same branch pushed again; the
   newer commit is the one that matters.
+* `integration` red at `spring-boot:repackage` with `Failed to read artifact
+  descriptor for io.micrometer:…` **after every test passed** → observed once, on a
+  docs-only commit whose Java sources were identical to a green commit minutes
+  earlier. Re-running the job succeeded in 60 s with the *same* Maven cache restored
+  and no re-download, so it was a transient remote read, not a poisoned cache and not
+  the code. Re-run once before investigating; if it repeats on two attempts, the cache
+  or Central is the suspect.
