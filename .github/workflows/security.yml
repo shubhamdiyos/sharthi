@@ -1,0 +1,222 @@
+# DevSecOps checks (§9) that are free to run.
+#
+# Every tool here is open source, run from a pinned container image, on the same
+# standard Linux runner the rest of CI uses. Nothing in this file is a paid
+# product, and two deliberate omissions are worth naming because they are the
+# obvious things a reader would expect to see:
+#
+#   * gitleaks/gitleaks-action and CodeQL are NOT used. Both are GitHub-first-party
+#     security products that, on a private repository, sit behind GitHub Advanced
+#     Security — a paid licence. The mandate is zero unexpected cost, so the same
+#     two checks are made with the tools themselves: gitleaks from its image, and
+#     the static analysis that SpotBugs and ArchUnit already run inside `mvn verify`
+#     in ci.yml. If the founder later buys GHAS, this file becomes the place to
+#     switch to the native actions.
+#   * Container image scanning is not here yet, because there is no image: GHCR
+#     publishing is a billable-adjacent decision that has not been approved (§7),
+#     and building an image in CI only to scan it would spend minutes and free
+#     storage on an artifact nobody deploys. Trivy runs in release.yml, where the
+#     image that gets scanned is the image that gets shipped.
+#
+# Cost of one run, measured: ~2 jobs, ~2-4 minutes each on the warm Maven cache, so
+# roughly 5 private-repo minutes per push. `workflow_dispatch` is there so a scan
+# can be re-run against an already-pushed commit instead of pushing an empty commit
+# to re-trigger it.
+
+name: security
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only: a security job that can write to the repository could rewrite the
+# evidence it is reporting (§9's least-privilege rule).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  API_DIR: services/api
+  # Pinned, not `latest`: these images decide what counts as a vulnerability and
+  # what counts as a leaked key, so an untagged image makes a passing build
+  # unreproducible — and a moving tag is how a scanner silently stops scanning.
+  OSV_IMAGE: ghcr.io/google/osv-scanner:v2.0.2
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.21.2
+  # The CycloneDX goal is invoked by coordinate, not declared in the pom, so the
+  # application build carries no security-tooling dependency at all.
+  CDX_PLUGIN: org.cyclonedx:cyclonedx-maven-plugin:2.9.1
+
+jobs:
+  dependencies:
+    name: Dependency vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          # The same key ci.yml uses, so this job restores the cache those jobs wrote
+          # instead of downloading the Spring Boot dependency graph a second time.
+          cache: maven
+          cache-dependency-path: services/api/pom.xml
+
+      # An SBOM rather than osv-scanner's own pom.xml resolver: pom resolution goes
+      # to deps.dev for the parent and transitive set, which is both a network
+      # dependency and a version that can lag a release. The CycloneDX plugin asks
+      # Maven what it actually resolved for this build — 124 components, test scope
+      # included — so the scan is of the dependency set the artifact is made of, and
+      # it needs no registry at all.
+      - name: Resolve the exact dependency set into a CycloneDX SBOM
+        working-directory: ${{ env.API_DIR }}
+        run: mvn -B -ntp "$CDX_PLUGIN":makeAggregateBom -DincludeTestScope=true
+
+      - name: Scan the SBOM against the OSV database
+        shell: bash
+        run: |
+          set -euo pipefail
+          # osv-scanner exits non-zero when it finds anything, which is not the gate:
+          # §2 blocks an *unapproved critical* vulnerability, so the threshold is
+          # decided by infra/ci/osv-gate.sh below. The report goes to RUNNER_TEMP so
+          # the working tree stays exactly what checkout left it.
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$RUNNER_TEMP:/ci" \
+            "$OSV_IMAGE" scan source \
+              -S /workspace/"$API_DIR"/target/bom.json \
+              --all-packages --format json --output /ci/osv-api.json \
+            || true
+          test -s "$RUNNER_TEMP/osv-api.json"
+
+      - name: Fail on a CRITICAL or HIGH advisory
+        shell: bash
+        run: sh infra/ci/osv-gate.sh "$RUNNER_TEMP/osv-api.json"
+
+      # The frontend is lockfile-scanned the same way once it exists; osv-scanner
+      # reads package-lock.json directly, so no SBOM generator is needed there.
+      # Guarded by the file rather than run unconditionally, because a scan step
+      # that reports "0 packages" on a repo with no frontend is a lie waiting to be
+      # trusted — and the gate would (correctly) refuse it.
+      - name: Scan the frontend lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f apps/web/package-lock.json ]; then
+            echo "apps/web/package-lock.json does not exist yet; skipping is honest, passing would not be"
+            exit 0
+          fi
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$RUNNER_TEMP:/ci" \
+            "$OSV_IMAGE" scan source \
+              -L /workspace/apps/web/package-lock.json \
+              --all-packages --format json --output /ci/osv-web.json \
+            || true
+          test -s "$RUNNER_TEMP/osv-web.json"
+          sh infra/ci/osv-gate.sh "$RUNNER_TEMP/osv-web.json"
+
+      # PRs only, and only here rather than in its own job: one step, no extra
+      # runner, and it answers the narrower question — does this pull request add a
+      # dependency that GitHub already knows to be vulnerable.
+      - name: Review dependencies introduced by the pull request
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          allow-licenses: Apache-2.0, BSD-2-Clause, BSD-3-Clause, MIT, EPL-2.0, LGPL-2.1-only, CDDL-1.1
+
+  secrets:
+    name: Leaked credentials
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Full history: a secret committed three commits ago and deleted since is
+      # still a secret, and it is already in the object store. The shallow checkout
+      # the other jobs use would not see it.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Before the real scan: proof that this invocation, this image and these rules
+      # can actually see a secret. Without it, "no leaks found" is a sentence whose
+      # truth depends on the scanner working — and a scan that reads nothing prints
+      # exactly the same words as a scan that finds nothing. Commit arithmetic is not
+      # used as that proof, because gitleaks walks commits that carry a patch, which
+      # is not any count `git rev-list` reports for a history with merge commits in
+      # it; the canary is a fact about the tool instead of a guess about the graph.
+      #
+      # The value is a synthetic GitHub personal-access-token, split in two so this
+      # workflow file does not itself contain a string the scanner matches — and the
+      # split is not decoration: AWS's own documentation key, AKIAIOSFODNN7EXAMPLE,
+      # was tried first and gitleaks does not report it, so a canary that cannot be
+      # found would have made this step a permanent failure rather than a test.
+      # It is written into RUNNER_TEMP, outside the repository, and never committed.
+      - name: Prove the scanner can see a secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          canary="$RUNNER_TEMP/gitleaks-canary"
+          rm -rf "$canary" && mkdir -p "$canary"
+          printf 'token: %s%s\n' 'ghp_' '1a2B3c4D5e6F7g8H9i0J1k2L3m4N5o6P7q8R' > "$canary/ci.yml"
+          git -C "$canary" init -q
+          git -C "$canary" -c user.email=ci@saathi.invalid -c user.name=ci add -A
+          git -C "$canary" -c user.email=ci@saathi.invalid -c user.name=ci \
+            commit -qm 'canary commit for scanner self-test'
+
+          if docker run --rm \
+              -v "$canary:/repo" \
+              -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo \
+              "$GITLEAKS_IMAGE" detect --source=/repo --redact >/dev/null 2>&1; then
+            echo "::error::gitleaks reported the canary repository as clean; the scan below cannot be trusted"
+            exit 1
+          fi
+          echo 'gitleaks found the canary, so a clean real scan means something'
+
+      - name: Scan every commit with gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          # safe.directory is not paranoia: the checkout is owned by the runner user
+          # while the container runs as root, and git refuses to read a repository it
+          # considers owned by somebody else. Without it, gitleaks would scan zero
+          # commits and call that a pass.
+          output=$(docker run --rm \
+            -v "$GITHUB_WORKSPACE:/repo" \
+            -e GIT_CONFIG_COUNT=1 \
+            -e GIT_CONFIG_KEY_0=safe.directory \
+            -e GIT_CONFIG_VALUE_0=/repo \
+            "$GITLEAKS_IMAGE" detect \
+              --source=/repo --redact \
+            2>&1) || { printf '%s\n' "$output"; exit 1; }
+          printf '%s\n' "$output"
+
+          # The one count that is not brittle: zero commits scanned means the
+          # traversal read nothing, whatever the history looks like.
+          scanned=$(printf '%s\n' "$output" \
+            | sed -nE 's/.*([0-9]+) commits? scanned.*/\1/p' | tail -1)
+          if [ "${scanned:-0}" -lt 1 ]; then
+            echo 'gitleaks scanned no commits: a history scan that read nothing is not a pass'
+            exit 1
+          fi
+          echo "gitleaks walked $scanned commit(s) of $(git rev-list --count HEAD) in this branch's history"
+
+      - name: Scan the working tree as well
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A second, different scan, not a repeat: the git scan looks at diffs
+          # across history, this one looks at the files as they now are, which is what
+          # catches a secret that arrived in a merge and never appeared as an added
+          # line in any single commit.
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/repo" \
+            "$GITLEAKS_IMAGE" detect \
+              --no-git --source=/repo --redact

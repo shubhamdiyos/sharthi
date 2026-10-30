@@ -1,0 +1,19 @@
+#!/bin/sh
+# psql from the same postgres:16 image the stack runs on.
+#
+# Deliberately not the runner's client: CI, a laptop and the deployed container
+# should all speak to the server through the same version, and `ubuntu-latest` is
+# free to change what it ships. Requires docker plus the PG_* variables the CI job
+# exports. On a developer machine the Compose postgres publishes the same port, so
+# the identical command works there — which is the point of keeping it in the repo
+# instead of inlining `docker run` in every workflow step.
+set -eu
+
+: "${PG_USER:?PG_USER must be set}"
+: "${PG_PASSWORD:?PG_PASSWORD must be set}"
+
+exec docker run --rm --network host \
+    -e PGUSER="$PG_USER" \
+    -e PGPASSWORD="$PG_PASSWORD" \
+    "${PG_IMAGE:-postgres:16}" \
+    psql -h 127.0.0.1 -p "${PG_PORT:-5432}" "$@"

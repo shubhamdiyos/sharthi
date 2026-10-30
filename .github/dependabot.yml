@@ -1,0 +1,49 @@
+# Dependabot version and security updates (§9's "enable GitHub security alerts").
+#
+# Free, and free specifically: GitHub lists "Dependabot security and version
+# updates" under the Free plan for private repositories, so this is the one
+# security capability that does the most work for the least money — it needs no
+# Actions minutes at all, because the scanning happens on GitHub's side and what
+# reaches the repository is a pull request.
+#
+# The cost it does have is indirect and worth naming: every pull request it opens
+# triggers ci.yml and security.yml, so an unbounded bot could spend the monthly
+# minutes on version bumps. `open-pull-requests-limit` is the throttle, grouped
+# updates are the reduction, and both are set deliberately low.
+#
+# The dependency graph this feeds is built by GitHub's own Maven extractor; the
+# osv-scanner job in security.yml is the check that does not depend on it, which is
+# why both exist rather than one.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /services/api
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Asia/Kolkata
+    # Five open bump PRs at a time, for a two-person company, is generous. The
+    # default of 5 is kept rather than raised: a Spring Boot minor-line change is
+    # not something to merge in bulk.
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # One PR per ecosystem-and-kind rather than one per artifact: 124 resolved
+      # components against 5 open PRs needs grouping to stay reviewable.
+      spring-boot:
+        patterns:
+          - org.springframework*
+      junit:
+        patterns:
+          - org.junit*
+          - org.mockito*
+          - org.assertj*
+  # npm joins this file in the same pull request as apps/web's package-lock.json:
+  # a directory entry whose lockfile does not exist is a config line that silently
+  # does nothing, and pretending to watch a dependency set that is not there is the
+  # false green this repository has already closed twice.

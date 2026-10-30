@@ -1,0 +1,26 @@
+#!/bin/sh
+# Flyway CLI, from the pinned image, with the repository's migration directory
+# mounted read-only at /flyway/sql — the location the image already defaults to.
+#
+# The image tag comes from FLYWAY_IMAGE and is pinned to the Flyway the api pom
+# declares: a newer CLI validates against rules the deployed application does not
+# run, so a green check would stop meaning anything. Set FLYWAY_SQL_DIR to point at
+# a different directory (the tamper test in database-migrations.yml uses that to
+# validate a history against an edited copy of V1).
+set -eu
+
+: "${PG_USER:?PG_USER must be set}"
+: "${PG_PASSWORD:?PG_PASSWORD must be set}"
+: "${SQL_DIR:?SQL_DIR must be set}"
+
+if [ -n "${FLYWAY_SQL_DIR:-}" ]; then
+    sql_dir="$FLYWAY_SQL_DIR"
+else
+    sql_dir="$PWD/$SQL_DIR"
+fi
+
+exec docker run --rm --network host \
+    -v "$sql_dir:/flyway/sql:ro" \
+    -e FLYWAY_USER="$PG_USER" \
+    -e FLYWAY_PASSWORD="$PG_PASSWORD" \
+    "${FLYWAY_IMAGE:-flyway/flyway:12.4.0-alpine}" "$@"

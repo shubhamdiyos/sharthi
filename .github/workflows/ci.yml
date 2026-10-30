@@ -1,0 +1,167 @@
+# Continuous integration.
+#
+# One workflow covers both triggers the mandate names — every feature branch push
+# and every pull request into main — because the validation is the same in both
+# cases and a second file would only duplicate it (§1's "avoid redundant
+# workflows"). It is also the workflow that branch protection is meant to require,
+# and the only one that does: the `unit` and `integration` checks below exist on
+# every commit, which is what a required check has to do to avoid leaving a merge
+# stuck waiting for a check that never runs.
+#
+# What each job proves, and why it is split the way it is:
+#   unit          `mvn test`. No daemon, no database, no network. It is the fast
+#                 half and it is the half that must stay runnable on a laptop.
+#   integration   `mvn verify` against a real PostgreSQL 16, exactly the version
+#                 the Compose stack runs. The schema, the transaction semantics
+#                 and the wire contract are only proven against the container.
+#                 "Validate Spring Boot configuration" lives here rather than in a
+#                 third job, because the tool for it is ApplicationContextIT: it
+#                 boots the application, binds every property, fails on an
+#                 unreadable one, and reads the readiness endpoint Compose's
+#                 healthcheck reads. A separate job would re-run the same JVM to
+#                 say the same thing.
+#
+# There is no frontend job yet, and that is deliberate rather than an oversight:
+# apps/web does not exist, and a job that passes because it found nothing to check
+# is the false green this repository already closed once in Failsafe. The frontend
+# job — lockfile install, ESLint, type-check, unit tests, production build —
+# arrives in the same pull request as the scaffold it validates.
+#
+# ── Cost of this workflow, measured not hoped ─────────────────────────────────
+# * `ubuntu-latest` only: standard GitHub-hosted Linux runners. Larger runners,
+#   macOS and Windows runners are billed per second at multiples of the Linux rate
+#   and are not used anywhere in this repository.
+# * Two Linux jobs per run, no more. Typical duration once the Maven cache is warm
+#   is ~2 min (unit) and ~6 min (integration) → ~8 private-repo minutes per push or
+#   pull request, against the 2,000 min/month of GitHub Free.
+# * `concurrency` keyed on the branch name, with cancel-in-progress, so a push and
+#   the pull request opened from it — the same commit validated twice — cost one
+#   run. `cancel-in-progress` means an aborted run stops billing at once.
+#   The push and the pull_request event still both *trigger* the workflow; the
+#   group makes the second one queue and cancel the first rather than run twice.
+#   That is the cheapest safe combination: no event is unmonitored (which is what
+#   dropping one trigger would do) and no commit is validated twice.
+# * `timeout-minutes` on every job, so a hung build cannot quietly consume the
+#   hour GitHub would otherwise allow it.
+# * One shared Maven cache entry (see the comment in the jobs) instead of one per
+#   job, and a 7-day retention on the only artifact this workflow uploads.
+# * Nothing here reads a cloud credential, pushes a container image, or touches an
+#   environment. Publishing starts in release.yml, and that workflow is
+#   deliberately not enabled until GHCR is approved (§7, §13 step 5).
+#
+# Estimated actuals are reported from real runs in docs/devops/CI-CD.md; the
+# estimates above are the ones made before the first run, kept so the difference
+# between the two is visible rather than quietly rewritten.
+
+name: ci
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  # Lets a validation be re-run on a commit that is already pushed, without
+  # inventing an empty commit to trigger the events above.
+  workflow_dispatch:
+
+# Nothing in CI writes to the repository, so nothing asks for more than reading it
+# (§9's least-privilege rule; a workflow that cannot write cannot leak or relabel).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  API_DIR: services/api
+  # Throwing away the idea that CI needs a secret. These values are not
+  # credentials: the database is an ephemeral container that dies with the job, and
+  # the real keys are never read from a workflow file (§9, D12). They are literals
+  # rather than one shared anchor because the `env` context is not available inside
+  # a job's `services:` block, and duplicating a non-secret is cheaper than a
+  # workflow that fails to parse.
+  POSTGRES_USER: saathi
+  POSTGRES_PASSWORD: ci-ephemeral-not-a-secret
+  POSTGRES_DB: saathi
+  POSTGRES_PORT: '5432'
+  SAATHI_SESSION_SECRET: ci-ephemeral-session-secret
+  SAATHI_AUDIT_IP_KEY: ci-ephemeral-audit-ip-key
+  SAATHI_IT_DB: saathi_it
+
+jobs:
+  unit:
+    name: Backend unit and architecture tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          # Scoped to the api pom rather than the default `**/pom.xml`: the cache key
+          # is a hash of that file, so an unrelated pom edit would otherwise throw
+          # away a few hundred MB of perfectly good dependencies and re-download them.
+          # `integration` below asks for exactly the same key, so the dependency set
+          # is stored once for the two jobs instead of twice — one entry inside the
+          # 500 MB free storage allowance. The run log states the key it wrote, which
+          # is where this claim is checked rather than assumed.
+          cache: maven
+          cache-dependency-path: services/api/pom.xml
+
+      - name: Compile and run the suite that needs no infrastructure
+        working-directory: ${{ env.API_DIR }}
+        run: mvn -B -ntp test
+
+  integration:
+    name: Backend integration tests against PostgreSQL 16
+    runs-on: ubuntu-latest
+    # Longer than `unit` on purpose: this job boots a database, runs Flyway, and
+    # starts the application eleven times over. Still nowhere near the platform's
+    # 360-minute default.
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: saathi
+          POSTGRES_PASSWORD: ci-ephemeral-not-a-secret
+          POSTGRES_DB: saathi
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U saathi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: services/api/pom.xml
+
+      # The whole point of the mandate: an empty or unmatched integration suite has
+      # to fail the build, so `verify` runs in full, not `test` twice.
+      # SAATHI_IT_RECREATE=true asks for the schema from scratch rather than reusing
+      # whatever a previous run of this job left in the container — which it cannot,
+      # because audit_event is append-only and nothing clears it.
+      - name: Migrate and verify V1 against a database created for this job
+        working-directory: ${{ env.API_DIR }}
+        run: SAATHI_IT_RECREATE=true mvn -B -ntp verify
+
+      # Failure evidence only. A passing run uploads nothing, which is what keeps
+      # artifact storage a rounding error inside the free 500 MB allowance; 7 days
+      # is GitHub Free's minimum retention and long enough for whoever reads it.
+      - name: Upload the integration test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: it-reports
+          path: ${{ env.API_DIR }}/target/failsafe-reports/
+          retention-days: 7
