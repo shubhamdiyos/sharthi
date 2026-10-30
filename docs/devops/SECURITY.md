@@ -153,17 +153,19 @@ declines to invent them:
 2. **Storage used by artifacts and packages**, against the 500 MB pooled allowance.
    This pipeline uploaded 0 artifacts across its first run, and no packages exist.
 3. **`gh api /repos/shubhamdiyos/sharthi/actions/caches`** — measured at the end of
-   30 October: **10 entries, 818 MB** — seven under the `setup-java-Linux-x64-maven-…`
-   keys the Java jobs share (470 MB), and three of ~115 MB under the
-   `node-cache-Linux-x64-npm-…` key for `apps/web` (347 MB). The seven Maven copies sit
-   under **four** keys, and that is the mechanism worth understanding rather than
+   31 October: **14 entries, 1,147 MB** — ten under the `setup-java-Linux-x64-maven-…`
+   keys the Java jobs share (684 MB), and four of ~115 MB under the
+   `node-cache-Linux-x64-npm-…` key for `apps/web` (463 MB). The ten Maven copies sit
+   under **five** keys, and that is the mechanism worth understanding rather than
    mourning: the key is a hash of `services/api/pom.xml`, so every dependency edit in
-   that file mints a new one. The fourth appeared when `bcprov-jdk18on` moved 1.82 → 1.85
-   to clear the OSV gate. `setup-java` then restores the previous entry by prefix and
+   that file mints a new one. Two appeared in one day when `bcprov-jdk18on` went
+   1.82 → 1.85 → 1.86, across PR #12 and the Dependabot PR that followed it.
+   `setup-java` then restores the previous entry by prefix and
    downloads only the jar that changed, which is why the first run under a new key cost
    54 s in `unit` and the next run under the same key cost 23 s. The npm copies accumulate
-   one per commit whose `push` and `pull_request` web jobs race on a cold key; that is
-   the number to watch, not the total. The ceiling is a separate 10 GB per repository,
+   one per commit whose `push` and `pull_request` web jobs race on a cold key — and one
+   more per lockfile change, which is what the toolchain PR added; that is the number to
+   watch, not the total. The ceiling is a separate 10 GB per repository,
    and entries expire after 7 days of non-use, so a growing pile is bounded — but the
    npm key reaching *dozens* means caching it costs more storage than it saves minutes,
    and that is worth checking again rather than assuming fixed.
