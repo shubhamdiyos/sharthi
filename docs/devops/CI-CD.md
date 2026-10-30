@@ -152,7 +152,7 @@ race that produced the extra cache entries below.
 | One commit, `ci` + `security`, both events | — | **298 s = 4.97 Linux min** on `7bfd75e`: 143 s of completed `pull_request` work (104 + 39) and **155 s billed by the five `push` jobs that the concurrency group cancelled** (29 + 23 + 64 + 31 + 8). The earlier three-workflow commit measured 302 s; five jobs racing makes the cancelled half more expensive than four did, which is why the commit total did not fall when the completed half did. **This row is the behaviour before `push` was narrowed to `main`, and it is kept because it is what the fix was priced against** — the duplicate set it describes no longer starts. Its replacement is measured on the first module merged under the narrowed triggers: PR #12, four pushes, `ci` + `security` + `database-migrations` each starting exactly once per push and **no job cancelled at all**, then one set on `main` for the merge commit. **1,364 s = 22.7 Linux min for the whole module** — the per-push breakdown is the table below this one. Per push that is ~4.5 min against the ~5 min a single commit cost when both events fired, but the comparison that matters is what the money bought: two of those four sets went red on gates no local run can reproduce (an OSV advisory against a jar the pom pinned, then the licence gate behind it), and none of it was spent on a cancelled twin. |
 | Maven cache | one shared entry, ~250 MB | **ten entries under five keys, 684 MB** at the end of 31 October — `GET …/actions/caches` lists them, and two effects are visible in that list rather than one. Keys hold more than one entry (`…c5110fbd…` holds three identical copies, `…0fe1054…` two): GitHub keeps older versions of a key it is asked to save again, so "one entry per key" was never the storage model. And the key itself is a hash of `services/api/pom.xml`, so each dependency edit in that file mints another one — the `bcprov-jdk18on` 1.82 → 1.85 → 1.86 sequence inside PR #12 and #13 added two keys in one day. What a new key actually costs is one download, not a rebuild: `unit` was 54 s on the first run after the pom change (prefix restore, fetch the new jar, save) and 23 s on the next run of the same pom. |
 | npm cache | one entry, ~120 MB | **three entries, 345 MB** at the end of 30 October, all under the key for `apps/web/package-lock.json`. Each commit whose `push` and `pull_request` web jobs start together on an uncached key can add one: both finish `npm ci` before the concurrency group cancels the `push` run, and both save. `node_modules` for this app is 121 MB compressed, so the npm key is the fastest-growing part of the store — one entry per racing commit, until entries age out at 7 days. Narrowing `push` to `main`
-closes that source: one `web` job per commit means one save per key. Measured total for everything: **14 entries, 1,147 MB** (11.2 % of the separate 10 GB cache allowance). |
+closes that source: one `web` job per commit means one save per key. Measured total for everything after PR #15: **16 entries, 1,379 MB** (13.5 % of the separate 10 GB cache allowance), up from 14 entries and 1,147 MB at the end of PR #12. |
 | Artifacts per successful run | 0 bytes | **0** — confirmed through the API, not by reading the YAML: `GET /repos/shubhamdiyos/sharthi/actions/runs/41056239592/artifacts` returns `total_count: 0`. Uploads happen only on failure. |
 
 So the honest figure is **~3-4 Linux minutes per set of runs that finishes**, and the
@@ -181,6 +181,21 @@ The shape of that number is `pushes × ~4 min + one main set`, so a three-push m
 ~17 min and a four-push module is the 22.7 above. Two of the four sets were spent going
 red on a gate, which is the expensive part of *this* module and the part that shrinks once
 a module stops adding dependencies: two green pushes and a merge would have been 14 min.
+
+Day 1B (PR #15) is the second module measured the same way, and it is the cheaper shape:
+two pushes and a merge, **880 s = 14.7 Linux min**, 0.7 % of the allowance.
+
+| | Measured on PR #15 |
+| --- | --- |
+| Push 1 `5b62821` | 332 s — green except `Leaked credentials` (7 s): a test passphrase the generic-api-key rule read as a key, which the new `.gitleaks.toml` allowlist now scopes to that literal shape. `dependencies` took 102 s here against 36 s and 31 s on the two later runs — the OSV database was cold. |
+| Push 2 `f81d361` | 276 s — green: `ci` 154 (unit 38, integration 79, web 37), `security` 46, Flyway 76 |
+| Merge `d780a55` on `main` | 272 s — unit 35, integration 83, web 41, `dependencies` 31, `secrets` 11, Flyway 71 |
+| **The whole module** | **880 s = 14.7 Linux min**, 0.7 % of the monthly allowance |
+| Cache after the module | **16 entries, 1,379 MB** (13.5 % of the 10 GB allowance); artifacts **0** |
+
+The estimate before the first push was the ~13 min the paragraph above predicts for this
+shape; the difference is the cold OSV scan, paid once and not again.
+
 At one module a working day with three pushes in it, that is **~360 minutes a month
 against the 2,000 free** — under a fifth of the allowance, and the figure to re-measure
 rather than defend.
