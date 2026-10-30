@@ -81,7 +81,7 @@ jobs:
       # An SBOM rather than osv-scanner's own pom.xml resolver: pom resolution goes
       # to deps.dev for the parent and transitive set, which is both a network
       # dependency and a version that can lag a release. The CycloneDX plugin asks
-      # Maven what it actually resolved for this build — 124 components, test scope
+      # Maven what it actually resolved for this build — 126 components, test scope
       # included — so the scan is of the dependency set the artifact is made of, and
       # it needs no registry at all.
       - name: Resolve the exact dependency set into a CycloneDX SBOM

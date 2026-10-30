@@ -8,7 +8,7 @@ who has to decide whether to trust a green run.
 
 | Check | Tool, pinned | Where | What it can catch |
 | --- | --- | --- | --- |
-| Dependency vulnerabilities | `ghcr.io/google/osv-scanner:v2.0.2` over a CycloneDX SBOM produced by `org.cyclonedx:cyclonedx-maven-plugin:2.9.1` | `.github/workflows/security.yml → dependencies` | Any advisory in the OSV database against the **124 components the build actually resolved**, test scope included. |
+| Dependency vulnerabilities | `ghcr.io/google/osv-scanner:v2.0.2` over a CycloneDX SBOM produced by `org.cyclonedx:cyclonedx-maven-plugin:2.9.1` | `.github/workflows/security.yml → dependencies` | Any advisory in the OSV database against the **126 components the build actually resolved**, test scope included. |
 | Dependency licences | `infra/ci/license-gate.sh` over the same SBOM, with `jq` | same job, every event | A resolved dependency whose every offered licence is outside the approved list — or which carries no licence metadata at all. Replaces `actions/dependency-review-action`, which cannot run on this repository (see [Not enabled](#not-enabled-and-on-what-grounds)). |
 | Secrets in history | `ghcr.io/gitleaks/gitleaks:v8.21.2`, `detect --source=/repo --redact` | `security.yml → secrets` | A credential committed in any commit reachable from the checked-out branch, including ones later deleted. |
 | Secrets in the working tree | the same image with `--no-git` | same job | A secret that reached the tree through a merge and never appeared as an added line in a single commit — the gap the history scan leaves. |
@@ -44,6 +44,16 @@ anything":
   `AGPL-3.0-only` dependency, or one with no licence metadata, fails the build by
   name. The list lives in `infra/ci/license-gate.sh` so that widening it is a commit
   with a message, not a settings change nobody sees.
+* **It has been widened once, in the pull request that added Argon2id.** Bouncy Castle —
+  the KDF `spring-security-crypto` delegates Argon2id to, so §12.2 requires it — declares
+  one licence, `Bouncy Castle Licence`, which has no SPDX identifier (checked against the
+  740-entry SPDX list) and so reaches the SBOM as a name rather than an id. Its licence
+  page states the text is the MIT permission notice under the Legion of the Bouncy Castle
+  copyright and "should be read in the same way as the MIT license". Approving it adds an
+  eighth entry and changes how the list is parsed: one licence per line, because a
+  space-separated list would have matched `Bouncy`, `Castle` and `Licence` as three. The
+  match stays exact — a component naming itself `Bouncy Castle License`, one letter
+  different, is still blocked, which is the first case the negative test checks.
 * **The licence gate covers Maven only.** `package-lock.json` carries no licence
   field, so the frontend's dependencies get the OSV advisory scan and not a licence
   verdict. Saying otherwise would be the false green this file keeps closing.

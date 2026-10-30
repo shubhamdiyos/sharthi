@@ -32,7 +32,7 @@ once in Failsafe, so there was never a run of a frontend job with no frontend.
 | Type-check failure | Java: the compiler *is* the type check. TypeScript: `tsc --noEmit` in `web`, before the build, so the message names the file rather than a bundler stage. |
 | Migration failure | `integration` migrates a fresh database through the application's own Flyway; `database-migrations` re-applies the same set through the Flyway CLI and asserts the server-side constraints. |
 | Unapproved critical vulnerability | `security.yml → dependencies`: a CycloneDX SBOM of the resolved graph, scanned against OSV, gated by `infra/ci/osv-gate.sh` on CRITICAL and HIGH. |
-| Unapproved dependency licence | same job, `infra/ci/license-gate.sh` over the same SBOM: every licence a component *offers* is checked against the approved SPDX ids listed at the top of that script, and a component with no licence metadata fails. |
+| Unapproved dependency licence | same job, `infra/ci/license-gate.sh` over the same SBOM: every licence a component *offers* is checked against the approved list at the top of that script — SPDX ids, plus one pom-declared licence name (`Bouncy Castle Licence`, which has no SPDX id; the reasoning is in `SECURITY.md`) — and a component with no licence metadata fails. |
 | Production build failure | `mvn -B -ntp verify` in `integration` packages the jar that the api image copies; `next build` in `web` produces the `.next/standalone` tree the web image copies. |
 
 "Never bypass failing checks to complete a merge" is **not** machine-enforced on this
