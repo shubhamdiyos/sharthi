@@ -31,9 +31,11 @@
 # * `ubuntu-latest` only: standard GitHub-hosted Linux runners. Larger runners,
 #   macOS and Windows runners are billed per second at multiples of the Linux rate
 #   and are not used anywhere in this repository.
-# * Two Linux jobs per run, no more. Typical duration once the Maven cache is warm
-#   is ~2 min (unit) and ~6 min (integration) → ~8 private-repo minutes per push or
-#   pull request, against the 2,000 min/month of GitHub Free.
+# * Two Linux jobs per run, no more. Measured on the first run of this file, with a
+#   cold Maven cache: 38 s for `unit`, 72 s for `integration` → about 2 private-repo
+#   minutes per push or pull request, against the 2,000 min/month of GitHub Free.
+#   The measurement is in docs/devops/CI-CD.md; the estimate before the first run was
+#   four times that, and the over-estimate is left in the doc rather than rewritten.
 # * `concurrency` keyed on the branch name, with cancel-in-progress, so a push and
 #   the pull request opened from it — the same commit validated twice — cost one
 #   run. `cancel-in-progress` means an aborted run stops billing at once.

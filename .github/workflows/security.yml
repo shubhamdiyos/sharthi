@@ -18,10 +18,11 @@
 #     storage on an artifact nobody deploys. Trivy runs in release.yml, where the
 #     image that gets scanned is the image that gets shipped.
 #
-# Cost of one run, measured: ~2 jobs, ~2-4 minutes each on the warm Maven cache, so
-# roughly 5 private-repo minutes per push. `workflow_dispatch` is there so a scan
-# can be re-run against an already-pushed commit instead of pushing an empty commit
-# to re-trigger it.
+# Cost of one run, measured on its first run: 44 s for `dependencies`, 7 s for
+# `secrets` — under a minute of the two together once the tool images are already on
+# the runner, and 68 MB of Maven cache shared with ci.yml rather than a second copy.
+# `workflow_dispatch` is there so a scan can be re-run against an already-pushed
+# commit instead of pushing an empty commit to re-trigger it.
 
 name: security
 
@@ -171,13 +172,20 @@ jobs:
           git -C "$canary" -c user.email=ci@saathi.invalid -c user.name=ci \
             commit -qm 'canary commit for scanner self-test'
 
-          if docker run --rm \
+          # Two ways this step could lie, and both are closed. A scan that reports
+          # the canary as clean means the rules or the image are not working; a scan
+          # that does not run at all — no docker, wrong daemon socket, image pull
+          # blocked — also exits non-zero, which an `if` alone would read as success.
+          if canary_out=$(docker run --rm \
               -v "$canary:/repo" \
               -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo \
-              "$GITLEAKS_IMAGE" detect --source=/repo --redact >/dev/null 2>&1; then
+              "$GITLEAKS_IMAGE" detect --source=/repo --redact 2>&1); then
             echo "::error::gitleaks reported the canary repository as clean; the scan below cannot be trusted"
             exit 1
           fi
+          printf '%s\n' "$canary_out"
+          printf '%s\n' "$canary_out" | grep -q 'leaks found' \
+            || { echo '::error::the canary run produced no leak report, so gitleaks did not run as expected'; exit 1; }
           echo 'gitleaks found the canary, so a clean real scan means something'
 
       - name: Scan every commit with gitleaks

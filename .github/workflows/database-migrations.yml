@@ -228,11 +228,14 @@ jobs:
               WHERE table_name='audit_event' AND column_name='business_day'" | grep -q ALWAYS \
             || { echo 'business_day is not a generated column'; exit 1; }
 
-          # ... and what it generates is the Indian day, not the UTC one.
+          # ... and what it generates is the Indian day, not the UTC one: 20:00Z on
+          # the 30th is 01:30 on the 31st in Siwan, so the row belongs to the 31st's
+          # reconciliation. (The first run of this job asserted the 30th, and the
+          # server was right and the assertion was wrong.)
           psql -d "$MIGRATION_DB" -tAc \
             "SELECT business_day
                FROM audit_event
-              WHERE id='01JZC4WQ8S2N7F5K9M3H6T0R1V'" | grep -q '2026-10-30' \
+              WHERE id='01JZC4WQ8S2N7F5K9M3H6T0R1V'" | grep -q '2026-10-31' \
             || { echo 'business_day did not derive from the inserted occurred_at'; exit 1; }
 
       - name: Prove that a migration edited after it ran is refused
