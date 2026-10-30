@@ -11,6 +11,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
@@ -50,12 +51,19 @@ class FoundationSchemaIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void flywayAppliedV1ExactlyOnceToADatabaseItDidNotAlreadyOwn() {
+    void flywayAppliedTheWholeChainOnceToADatabaseItDidNotAlreadyOwn() {
         List<Map<String, Object>> history = jdbc.queryForList(
-            "SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank");
-        assertEquals(1, history.size(), "the foundation migration is the only one that exists yet");
-        assertEquals("1", history.get(0).get("version"));
-        assertEquals(Boolean.TRUE, history.get(0).get("success"));
+            "SELECT version, script, success FROM flyway_schema_history ORDER BY installed_rank");
+        // Arrays.asList and not List.of: a repeatable migration's version column is NULL, and
+        // List.of throws on a null element before the assertion ever compares anything.
+        assertEquals(Arrays.asList("1", "2", "3", null),
+            history.stream().map(row -> (String) row.get("version")).toList(),
+            "V1, V2, V3 and the pilot seed, in that order, and nothing else");
+        assertTrue(history.stream().allMatch(row -> Boolean.TRUE.equals(row.get("success"))),
+            "a failed step in the IT database would be the same failure in a deployment");
+        // The seed is repeatable: it is applied once here, and re-applied only when its checksum
+        // changes. A second row for it in one run would mean Flyway re-ran it per migration.
+        assertEquals(1, history.stream().filter(row -> row.get("version") == null).count());
     }
 
     @Test

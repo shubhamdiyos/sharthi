@@ -1,0 +1,14 @@
+# Saathi API — `dev` profile (what Compose starts, via SPRING_PROFILES_ACTIVE=dev).
+#
+# The only difference from the default configuration is the reference data the pilot needs:
+# the fictional cities, wards, activations, fees and people. Production reads
+# db/migration alone, so a deployment cannot acquire a fake customer by inheriting a setting
+# it forgot to override — the seed is opt-in by profile, not opt-out by profile.
+
+spring:
+  flyway:
+    # Order is the array order, and db/seed's repeatable file depends on every table
+    # db/migration creates. Flyway applies versioned scripts first regardless, so this is
+    # about legibility rather than correctness — but a reviewer should be able to see which
+    # directory is which.
+    locations: classpath:db/migration,classpath:db/seed

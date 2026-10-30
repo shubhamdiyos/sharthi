@@ -37,7 +37,11 @@ spring:
 
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    # The same two directories the `dev` profile reads, so an IT asserts against the pilot's
+    # real cities, wards, fees and people instead of inserting its own copy of them. The
+    # production profile reads db/migration alone — which is why this line is here and not in
+    # application.yml.
+    locations: classpath:db/migration,classpath:db/seed
     baseline-on-migrate: false
     validate-on-migrate: true
     clean-disabled: true
