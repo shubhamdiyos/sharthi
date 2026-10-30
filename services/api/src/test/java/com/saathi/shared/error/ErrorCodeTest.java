@@ -60,11 +60,14 @@ class ErrorCodeTest {
     @Test
     void theTableIsNotSilentlyGrowing() {
         // 39 codes in §10.2, plus the flagged INTERNAL_ERROR gap, plus the two a staff login
-        // cannot be answered without. Adding a member is a change to the API contract, and this
-        // assertion is where that has to be acknowledged first.
-        assertEquals(42, ErrorCode.values().length,
+        // cannot be answered without, plus the three the merchant/catalogue endpoints name in
+        // their own §10.5.6 / §10.5.8 error columns. Adding a member is a change to the API
+        // contract, and this assertion is where that has to be acknowledged first.
+        assertEquals(45, ErrorCode.values().length,
             "§10.2 lists 39; INTERNAL_ERROR, INVALID_CREDENTIALS and MFA_REQUIRED are the flagged"
-                + " departures documented on the enum.");
+                + " departures documented on the enum, and CATEGORY_NOT_ACTIVE, LICENCE_INCOMPLETE"
+                + " and NEGATIVE_STOCK are named by §10.5.6/§10.5.8. Each addition is documented"
+                + " on the enum itself.");
         for (ErrorCode code : ErrorCode.values()) {
             assertEquals(code.name(), code.name().toUpperCase(), code + " is SCREAMING_SNAKE");
             assertTrue(code.name().matches("[A-Z][A-Z0-9_]*"), code.name());

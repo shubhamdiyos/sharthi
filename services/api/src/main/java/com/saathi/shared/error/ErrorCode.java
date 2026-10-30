@@ -21,9 +21,11 @@ import org.springframework.http.HttpStatus;
  * <p>{@code INVALID_CREDENTIALS} and {@code MFA_REQUIRED} were added anyway, because §12.1 makes
  * every staff sign-in password-then-OTP and no code in §10.2 can say either "that password is
  * wrong" or "the password was right, now the second factor". {@code UNAUTHENTICATED} would be true
- * of both and useful for neither; {@code OTP_INVALID} would be a lie about the first. They are the
- * only members here that are not §10.2's list, and the smallest set without which a staff login
- * cannot be answered at all.
+ * of both and useful for neither; {@code OTP_INVALID} would be a lie about the first. The
+ * merchant/catalogue module then added {@code CATEGORY_NOT_ACTIVE}, {@code LICENCE_INCOMPLETE} and
+ * {@code NEGATIVE_STOCK}, each named by an endpoint's own error column in §10.5.6 or §10.5.8.
+ * Those five are the only members here that are not §10.2's list, and each is the smallest answer
+ * an endpoint that exists cannot be written without.
  */
 public enum ErrorCode {
     VALIDATION_FAILED(HttpStatus.UNPROCESSABLE_CONTENT),
@@ -57,7 +59,17 @@ public enum ErrorCode {
     PAYOUT_RULE_NOT_CONFIGURED(HttpStatus.UNPROCESSABLE_CONTENT),
     RATE_NOT_APPROVED(HttpStatus.UNPROCESSABLE_CONTENT),
     CATEGORY_IN_USE(HttpStatus.CONFLICT),
-    // Not §10.2's list — see the note above. These two and only these.
+    /**
+     * Referenced by §10.5.6 and §10.5.8 and absent from §10.2's table. Added here because the
+     * merchant/catalogue module is the first one that has to answer with them: a city has not
+     * switched the category on, a licence-requiring category has no valid licence yet, or a
+     * stock adjustment would take a count below zero. The founder was told §10.2's list is short
+     * of the codes §10.5 uses; these three are the ones an endpoint in this module names.
+     */
+    CATEGORY_NOT_ACTIVE(HttpStatus.CONFLICT),
+    LICENCE_INCOMPLETE(HttpStatus.UNPROCESSABLE_CONTENT),
+    NEGATIVE_STOCK(HttpStatus.UNPROCESSABLE_CONTENT),
+    // Not §10.2's list either — see the note above. These two are the staff-login pair.
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED),
     MFA_REQUIRED(HttpStatus.UNAUTHORIZED),
     OTP_INVALID(HttpStatus.UNAUTHORIZED),

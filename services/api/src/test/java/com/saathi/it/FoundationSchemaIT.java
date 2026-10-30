@@ -56,9 +56,9 @@ class FoundationSchemaIT extends AbstractIntegrationTest {
             "SELECT version, script, success FROM flyway_schema_history ORDER BY installed_rank");
         // Arrays.asList and not List.of: a repeatable migration's version column is NULL, and
         // List.of throws on a null element before the assertion ever compares anything.
-        assertEquals(Arrays.asList("1", "2", "3", null),
+        assertEquals(Arrays.asList("1", "2", "3", "4", null),
             history.stream().map(row -> (String) row.get("version")).toList(),
-            "V1, V2, V3 and the pilot seed, in that order, and nothing else");
+            "V1, V2, V3, V4 and the pilot seed, in that order, and nothing else");
         assertTrue(history.stream().allMatch(row -> Boolean.TRUE.equals(row.get("success"))),
             "a failed step in the IT database would be the same failure in a deployment");
         // The seed is repeatable: it is applied once here, and re-applied only when its checksum

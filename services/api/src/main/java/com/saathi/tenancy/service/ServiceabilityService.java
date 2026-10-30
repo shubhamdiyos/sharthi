@@ -72,6 +72,31 @@ public class ServiceabilityService {
         return tenant;
     }
 
+    /**
+     * A city resolved from a row's own {@code tenant_id}, refusing one that is not live. Internal
+     * callers (a shop's own detail, a product's shop) already hold the id and must not be given a
+     * second way to resolve a city that skips the status check.
+     */
+    @Transactional(readOnly = true)
+    public Tenant liveTenantById(String tenantId) {
+        Tenant tenant = tenantById(tenantId);
+        if (tenant.getStatus() != TenantStatus.LIVE) {
+            throw new ApiException(ErrorCode.TENANT_NOT_LIVE, "That city is not taking orders right now.");
+        }
+        return tenant;
+    }
+
+    /**
+     * A city by internal id, whatever its status. Staff surfaces read this: an operator in a
+     * draft or suspended city still has a queue to look at, and the storefront is the only caller
+     * that must be refused a city which is not live.
+     */
+    @Transactional(readOnly = true)
+    public Tenant tenantById(String tenantId) {
+        return tenants.findById(tenantId).orElseThrow(() -> new ApiException(
+            ErrorCode.OUTSIDE_SERVICE_AREA, "We do not deliver in that city yet."));
+    }
+
     /** A ward that is switched on in this city. An inactive ward is not served, and says so. */
     @Transactional(readOnly = true)
     public ServiceWard servedWard(Tenant tenant, int wardNo) {
@@ -134,6 +159,24 @@ public class ServiceabilityService {
         }
         views.sort(Comparator.comparingInt(ActivatedCategory::sort));
         return List.copyOf(views);
+    }
+
+    /**
+     * One activated taxonomy node's global id, by the public slug. The storefront and the
+     * merchant's own catalogue both narrow by {@code ?category=}, and both must refuse a slug
+     * this city has not switched on rather than return an empty page that looks like a bug.
+     */
+    @Transactional(readOnly = true)
+    public String categoryIdOf(Tenant tenant, String slug) {
+        if (slug == null || slug.isBlank()) {
+            return "";
+        }
+        return activatedCategories(tenant).stream()
+            .filter(c -> c.slug().equalsIgnoreCase(slug.trim()))
+            .map(c -> c.category().getId())
+            .findFirst()
+            .orElseThrow(() -> new ApiException(ErrorCode.VALIDATION_FAILED,
+                "That category is not active in this city."));
     }
 
     /**

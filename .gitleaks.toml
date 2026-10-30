@@ -1,0 +1,15 @@
+title = "Saathi gitleaks configuration"
+
+# The defaults stay in force; this file only adds one narrowly-scoped allowlist.
+[extend]
+useDefault = true
+
+# The integration suites sign in with a passphrase they hash at runtime; nothing in the
+# repository can verify it, so it is a fixture, not a credential. The finding that prompted
+# this entry was `PASSWORD = "gupta-market-2026"` in MerchantCatalogIT — a false positive the
+# generic-api-key rule raised because the assignment looks like a key. The allowlist matches
+# only that shape (lowercase words and a year, hyphenated). A real key, which is mixed-case
+# and longer, is still reported wherever it appears.
+[allowlist]
+description = "Runtime-hashed test passphrases such as warehouse-lease-2026."
+regexes = ['''[a-z]+-[a-z]+-20\d\d''']

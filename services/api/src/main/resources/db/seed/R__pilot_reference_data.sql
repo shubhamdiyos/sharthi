@@ -220,3 +220,292 @@ ON CONFLICT (tenant_id, ward_id, fulfilment_mode, valid_from) DO UPDATE SET
 -- Barauli's ward has no fee rule. That is deliberate and it is the assertion §10.5.2's
 -- ward-coverage screen needs: a suspended city's ward resolves to no current rate, so a quote
 -- there fails rather than inventing a number.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Shops (§5.3, §10.5.3, §10.5.8)
+--
+-- The registry's nine shops, with the states the operator screens show rather than a uniform
+-- "approved": five live in Siwan, one hidden for a licence problem, one hidden for geography,
+-- one still PENDING in draft-city Mashaun, and one suspended with Barauli.
+--
+-- Gupta Fresh Mart is the busiest Siwan shop and the one every cash-ledger screen names.
+-- Anita Dairy delivers itself (SAATH-4849), so its capability is MERCHANT_ONLY and its default
+-- mode is MERCHANT — the CHECK in V4 refuses any other pairing. Sharma Bakery's bakery category
+-- requires a licence and its photo is invalid, which is why it is hidden rather than rejected:
+-- the shop was approved, the visibility decision is separate (§5.4).
+--
+-- Hours are stored in the same snake_case JSON the settings endpoint writes, per day, with
+-- 1 = Monday. Gupta's 8:00–22:00 is the closing time every screen shows.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+INSERT INTO merchant (id, tenant_id, code, legal_name, trade_name, category_id,
+                      phone, address_text, ward_id, operating_hours_json,
+                      state, hidden_reason, fulfilment_capability, default_fulfilment_mode,
+                      customer_choice_allowed, self_deliver_zones_json,
+                      licence_ref, licence_state, onboarding_completed_at,
+                      approved_by, approved_at, created_at, updated_at)
+VALUES
+    ('N38GBA9P599PBQ3KC0KKQ1YJ2E', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'gupta-fresh-mart',
+     'Gupta Fresh Mart', 'Gupta Fresh Mart', '01V9E094PTY73D1AVPFVDJ4PMY',
+     '+919400001180', 'Mithan Market, Ward 12, Siwan', '01YNWDVVMJ7A26M1P29AP16GAJ',
+     '[{"day":1,"opens_at":"08:00","closes_at":"22:00","closed":false},
+       {"day":2,"opens_at":"08:00","closes_at":"22:00","closed":false},
+       {"day":3,"opens_at":"08:00","closes_at":"22:00","closed":false},
+       {"day":4,"opens_at":"08:00","closes_at":"22:00","closed":false},
+       {"day":5,"opens_at":"08:00","closes_at":"22:00","closed":false},
+       {"day":6,"opens_at":"08:00","closes_at":"22:00","closed":false},
+       {"day":7,"opens_at":"08:00","closes_at":"22:00","closed":false}]',
+     'APPROVED', NULL, 'PLATFORM_ONLY', 'PLATFORM', true, NULL,
+     NULL, 'NOT_SUBMITTED', '2026-09-03T11:00:00+05:30',
+     '01D2S4GNTQ916TY67JTWPEN1BT', '2026-09-03T11:00:00+05:30',
+     '2026-09-02T16:10:00+05:30', '2026-09-03T11:00:00+05:30'),
+
+    ('WK2QBRKYZFQD4JSJ2H7QVKSWS3', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'mishra-kirana-bhandar',
+     'Mishra Kirana Bhandar', 'Mishra Kirana Bhandar', '01HM1FPVAJ7QF3EMFVF6TRTT8N',
+     '+919400001181', 'Masjid Road, Ward 04, Siwan', '019HSZK7VAPZZC7QG7E328YNPW',
+     '[{"day":1,"opens_at":"07:00","closes_at":"21:30","closed":false},
+       {"day":2,"opens_at":"07:00","closes_at":"21:30","closed":false},
+       {"day":3,"opens_at":"07:00","closes_at":"21:30","closed":false},
+       {"day":4,"opens_at":"07:00","closes_at":"21:30","closed":false},
+       {"day":5,"opens_at":"07:00","closes_at":"21:30","closed":false},
+       {"day":6,"opens_at":"07:00","closes_at":"21:30","closed":false},
+       {"day":7,"opens_at":"07:00","closes_at":"21:30","closed":false}]',
+     'APPROVED', NULL, 'PLATFORM_ONLY', 'PLATFORM', true, NULL,
+     NULL, 'NOT_SUBMITTED', '2026-09-04T10:20:00+05:30',
+     '01D2S4GNTQ916TY67JTWPEN1BT', '2026-09-04T10:20:00+05:30',
+     '2026-09-03T18:40:00+05:30', '2026-09-04T10:20:00+05:30'),
+
+    ('6DJ31NRMDZ5F5QV7QSDK9C9AFQ', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'siwan-chicken-and-meats',
+     'Siwan Chicken and Meats', 'Siwan Chicken and Meats', '01DHQACY2YXS9440JBE55PQEC9',
+     '+919400001182', 'Chandbeli Road, Ward 09, Siwan', '01PK9PPAHHQZ23FVE8AJ3R4K0Q',
+     '[{"day":1,"opens_at":"08:00","closes_at":"20:30","closed":false},
+       {"day":2,"opens_at":"08:00","closes_at":"20:30","closed":false},
+       {"day":3,"opens_at":"08:00","closes_at":"20:30","closed":false},
+       {"day":4,"opens_at":"08:00","closes_at":"20:30","closed":false},
+       {"day":5,"opens_at":"08:00","closes_at":"20:30","closed":false},
+       {"day":6,"opens_at":"08:00","closes_at":"20:30","closed":false},
+       {"day":7,"opens_at":"08:00","closes_at":"20:30","closed":false}]',
+     'APPROVED', NULL, 'PLATFORM_ONLY', 'PLATFORM', true, NULL,
+     'BR-MEAT-2026-0417', 'VALID', '2026-09-05T09:15:00+05:30',
+     '01D2S4GNTQ916TY67JTWPEN1BT', '2026-09-05T09:15:00+05:30',
+     '2026-09-04T12:05:00+05:30', '2026-09-05T09:15:00+05:30'),
+
+    ('9NQBYMYNRJ85CTJREARRA7G8F2', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'anita-dairy',
+     'Anita Dairy', 'Anita Dairy', '01DQWYNSVDMV1Y2HWNE9WSSVD4',
+     '+919400001183', 'Mithan Market, Ward 12, Siwan', '01YNWDVVMJ7A26M1P29AP16GAJ',
+     '[{"day":1,"opens_at":"06:30","closes_at":"20:00","closed":false},
+       {"day":2,"opens_at":"06:30","closes_at":"20:00","closed":false},
+       {"day":3,"opens_at":"06:30","closes_at":"20:00","closed":false},
+       {"day":4,"opens_at":"06:30","closes_at":"20:00","closed":false},
+       {"day":5,"opens_at":"06:30","closes_at":"20:00","closed":false},
+       {"day":6,"opens_at":"06:30","closes_at":"20:00","closed":false},
+       {"day":7,"opens_at":"06:30","closes_at":"20:00","closed":false}]',
+     'APPROVED', NULL, 'MERCHANT_ONLY', 'MERCHANT', false, '[12]',
+     NULL, 'NOT_SUBMITTED', '2026-09-06T08:30:00+05:30',
+     '01D2S4GNTQ916TY67JTWPEN1BT', '2026-09-06T08:30:00+05:30',
+     '2026-09-04T15:25:00+05:30', '2026-09-06T08:30:00+05:30'),
+
+    ('AMTVQ0PYWQFJYYV17X1Q5R7W5B', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'aashirvaad-general-store',
+     'Aashirvaad General Store', 'Aashirvaad General Store', '018H9MWZJBGSJZNA5YS62P892A',
+     '+919400001184', 'Ward 01, Aoriyanimath, Siwan', '01NMEEXSEKWHZEY2J6GY8N4D0G',
+     '[{"day":1,"opens_at":"07:00","closes_at":"22:30","closed":false},
+       {"day":2,"opens_at":"07:00","closes_at":"22:30","closed":false},
+       {"day":3,"opens_at":"07:00","closes_at":"22:30","closed":false},
+       {"day":4,"opens_at":"07:00","closes_at":"22:30","closed":false},
+       {"day":5,"opens_at":"07:00","closes_at":"22:30","closed":false},
+       {"day":6,"opens_at":"07:00","closes_at":"22:30","closed":false},
+       {"day":7,"opens_at":"07:00","closes_at":"22:30","closed":false}]',
+     'APPROVED', NULL, 'PLATFORM_ONLY', 'PLATFORM', true, NULL,
+     NULL, 'NOT_SUBMITTED', '2026-09-07T13:00:00+05:30',
+     '01D2S4GNTQ916TY67JTWPEN1BT', '2026-09-07T13:00:00+05:30',
+     '2026-09-06T17:45:00+05:30', '2026-09-07T13:00:00+05:30'),
+
+    ('SJ3MYKT3ZPSC5KZKPR3G892N34', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'sharma-bakery',
+     'Sharma Bakery', 'Sharma Bakery', '017RDX7JC6F8XPF6PXXQ6ABYAK',
+     '+919400001185', 'Nawada, Ward 07, Siwan', '017CWB0S01Z0ZZTNWNWHEKG9SX',
+     '[{"day":1,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":2,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":3,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":4,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":5,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":6,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":7,"opens_at":"07:00","closes_at":"21:00","closed":false}]',
+     'APPROVED', 'Licence photo invalid', 'PLATFORM_ONLY', 'PLATFORM', true, NULL,
+     'BR-BAKE-2026-0091', 'INVALID', '2026-09-08T10:00:00+05:30',
+     '01D2S4GNTQ916TY67JTWPEN1BT', '2026-09-08T10:00:00+05:30',
+     '2026-09-07T09:20:00+05:30', '2026-09-08T10:00:00+05:30'),
+
+    ('1MQQC2GG3VKPEH4A760X321DBX', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'kumar-provision-store',
+     'Kumar Provision Store', 'Kumar Provision Store', '01HM1FPVAJ7QF3EMFVF6TRTT8N',
+     '+919400001186', 'Main Road, Siwan', NULL,
+     '[{"day":1,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":2,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":3,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":4,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":5,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":6,"opens_at":"07:00","closes_at":"21:00","closed":false},
+       {"day":7,"opens_at":"07:00","closes_at":"21:00","closed":false}]',
+     'APPROVED', 'Address outside all wards', 'PLATFORM_ONLY', 'PLATFORM', true, NULL,
+     NULL, 'NOT_SUBMITTED', '2026-09-09T12:00:00+05:30',
+     '01D2S4GNTQ916TY67JTWPEN1BT', '2026-09-09T12:00:00+05:30',
+     '2026-09-08T14:30:00+05:30', '2026-09-09T12:00:00+05:30'),
+
+    ('GC6BNF3SM6GXKNGJH82081FSCJ', '01YNXV3CA9TS3M70MXR8MJH9TA', 'siwan-dairy-point',
+     'Siwan Dairy Point', 'Siwan Dairy Point', '01DQWYNSVDMV1Y2HWNE9WSSVD4',
+     '+919400001187', 'Bhitari Road, Ward 01, Mashaun', '01K44E2VGSQFR7PZFE3WHF20X8',
+     NULL, 'PENDING', NULL, 'PLATFORM_ONLY', 'PLATFORM', true, NULL,
+     NULL, 'SUBMITTED', NULL, NULL, NULL,
+     '2026-10-20T11:10:00+05:30', '2026-10-20T11:10:00+05:30'),
+
+    ('WTPER5KHDTX945WQZZA88YP3WZ', '014A6TTPBQTSF8DM9P94FN94PS', 'barauli-kirana-hub',
+     'Barauli Kirana Hub', 'Barauli Kirana Hub', '01HM1FPVAJ7QF3EMFVF6TRTT8N',
+     '+919400001188', 'Barauli Bazar, Ward 01, Barauli', '01PZZ05419GG8ME8QDB2T4ZV2B',
+     '[{"day":1,"opens_at":"08:00","closes_at":"20:00","closed":false},
+       {"day":2,"opens_at":"08:00","closes_at":"20:00","closed":false},
+       {"day":3,"opens_at":"08:00","closes_at":"20:00","closed":false},
+       {"day":4,"opens_at":"08:00","closes_at":"20:00","closed":false},
+       {"day":5,"opens_at":"08:00","closes_at":"20:00","closed":false},
+       {"day":6,"opens_at":"08:00","closes_at":"20:00","closed":false},
+       {"day":7,"opens_at":"08:00","closes_at":"20:00","closed":false}]',
+     'SUSPENDED', NULL, 'PLATFORM_ONLY', 'PLATFORM', true, NULL,
+     NULL, 'NOT_SUBMITTED', '2026-08-22T09:00:00+05:30',
+     '01Z602EBP9ERSY30BFYGVBJZFP', '2026-08-22T09:00:00+05:30',
+     '2026-08-21T10:40:00+05:30', '2026-08-22T09:00:00+05:30')
+ON CONFLICT (tenant_id, code) DO UPDATE SET
+    legal_name = EXCLUDED.legal_name,
+    trade_name = EXCLUDED.trade_name,
+    category_id = EXCLUDED.category_id,
+    phone = EXCLUDED.phone,
+    address_text = EXCLUDED.address_text,
+    ward_id = EXCLUDED.ward_id,
+    operating_hours_json = EXCLUDED.operating_hours_json,
+    state = EXCLUDED.state,
+    hidden_reason = EXCLUDED.hidden_reason,
+    fulfilment_capability = EXCLUDED.fulfilment_capability,
+    default_fulfilment_mode = EXCLUDED.default_fulfilment_mode,
+    customer_choice_allowed = EXCLUDED.customer_choice_allowed,
+    self_deliver_zones_json = EXCLUDED.self_deliver_zones_json,
+    licence_ref = EXCLUDED.licence_ref,
+    licence_state = EXCLUDED.licence_state,
+    onboarding_completed_at = EXCLUDED.onboarding_completed_at,
+    approved_by = EXCLUDED.approved_by,
+    approved_at = EXCLUDED.approved_at;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- The shelf the demo orders are built from (§5.3, §7)
+--
+-- Prices are the registry's rupee figures, in paise. The two by-weight lines are why
+-- `is_by_weight` exists: chicken is priced per kilogram and the customer sees an estimate
+-- until the shop weighs it (§7.5), so `weight_grams` stays NULL and the consent notice comes
+-- from the API rather than a stored sentence.
+--
+-- `stock_unit` is coherent with `unit_label` under §7.1's rule — a "5 kg pack" is counted in
+-- packs, so `pc`; loose chicken is counted in `kg`. None of these rows may be edited into a
+-- label and a unit that disagree, because the write endpoint would refuse the same pair.
+--
+-- Sharma Bakery and Kumar Provision Store keep a shelf while hidden: hiding is a visibility
+-- decision, not a deletion, and the operator can unhide a shop that still has a catalogue.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+INSERT INTO product (id, tenant_id, merchant_id, category_id, code, name, description,
+                     price_paise, unit_label, is_by_weight, weight_grams, pack_qty,
+                     track_stock, stock_qty, stock_unit, max_qty_per_order,
+                     available, active, created_at, updated_at)
+VALUES
+    ('F3TDJ1FQMY8SXJ0TKH29AB3M3T', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'N38GBA9P599PBQ3KC0KKQ1YJ2E',
+     '01V9E094PTY73D1AVPFVDJ4PMY', 'aashirvaad-atta-5kg', 'Aashirvaad Atta',
+     'Whole wheat atta, 5 kg pack', 32000, '5 kg pack', false, 5000, 1,
+     true, 18, 'pc', 4, true, true,
+     '2026-09-03T12:00:00+05:30', '2026-09-03T12:00:00+05:30'),
+
+    ('7ZBVR3Z1P5J8MNVF23CAGXT4ZW', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'N38GBA9P599PBQ3KC0KKQ1YJ2E',
+     '01HM1FPVAJ7QF3EMFVF6TRTT8N', 'tata-salt-1kg', 'Tata Salt',
+     'Iodised salt, 1 kg pack', 2800, '1 kg pack', false, 1000, 1,
+     true, 30, 'pc', 10, true, true,
+     '2026-09-03T12:05:00+05:30', '2026-09-03T12:05:00+05:30'),
+
+    ('DRCAYPS3ZK4MDP9NXNA7E2613F', '01NGD9Y4JMQ2RBNVVKXX7J04DM', '6DJ31NRMDZ5F5QV7QSDK9C9AFQ',
+     '01DHQACY2YXS9440JBE55PQEC9', 'chicken-curry-cut', 'Chicken (curry cut)',
+     'Fresh chicken, cut for curry, sold by weight', 47000, '1 kg', true, NULL, NULL,
+     true, 12.500, 'kg', 5, true, true,
+     '2026-09-05T10:00:00+05:30', '2026-09-05T10:00:00+05:30'),
+
+    ('05V9EEXG8H50XSYNK199XXMWJA', '01NGD9Y4JMQ2RBNVVKXX7J04DM', '6DJ31NRMDZ5F5QV7QSDK9C9AFQ',
+     '01DHQACY2YXS9440JBE55PQEC9', 'eggs-6pc', 'Eggs',
+     'Farm eggs, pack of six', 4200, '6 pc', false, NULL, 6,
+     true, 40, 'pc', 10, true, true,
+     '2026-09-05T10:05:00+05:30', '2026-09-05T10:05:00+05:30'),
+
+    ('19J7AGVXTY2YK8S267X0T0MD9C', '01NGD9Y4JMQ2RBNVVKXX7J04DM', '9NQBYMYNRJ85CTJREARRA7G8F2',
+     '01DQWYNSVDMV1Y2HWNE9WSSVD4', 'amul-taaza-500ml', 'Amul Taaza Milk',
+     'Toned milk, 500 ml pack', 2900, '500 ml pack', false, 500, 1,
+     true, 24, 'pc', 10, true, true,
+     '2026-09-06T09:00:00+05:30', '2026-09-06T09:00:00+05:30'),
+
+    ('HFPXN5CEN667K0E954TJKAXM6X', '01NGD9Y4JMQ2RBNVVKXX7J04DM', '9NQBYMYNRJ85CTJREARRA7G8F2',
+     '01DQWYNSVDMV1Y2HWNE9WSSVD4', 'curd-500g', 'Fresh Curd',
+     'Set curd, 500 g pack', 4500, '500 g pack', false, 500, 1,
+     true, 12, 'pc', 6, true, true,
+     '2026-09-06T09:05:00+05:30', '2026-09-06T09:05:00+05:30'),
+
+    ('CFMP2B8QNJMAH4MKYWC8KMWFXG', '01NGD9Y4JMQ2RBNVVKXX7J04DM', '9NQBYMYNRJ85CTJREARRA7G8F2',
+     '01DQWYNSVDMV1Y2HWNE9WSSVD4', 'paneer-200g', 'Paneer',
+     'Fresh paneer, 200 g pack', 9000, '200 g pack', false, 200, 1,
+     true, 8, 'pc', 4, true, true,
+     '2026-09-06T09:10:00+05:30', '2026-09-06T09:10:00+05:30'),
+
+    ('8WD1NJ3H8GGER3VQ4B9MXA5JRY', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'WK2QBRKYZFQD4JSJ2H7QVKSWS3',
+     '01HM1FPVAJ7QF3EMFVF6TRTT8N', 'sona-masoori-rice-5kg', 'Sona Masoori Rice',
+     'Everyday rice, 5 kg pack', 42000, '5 kg pack', false, 5000, 1,
+     true, 10, 'pc', 3, true, true,
+     '2026-09-04T11:00:00+05:30', '2026-09-04T11:00:00+05:30'),
+
+    ('Q5368662BXXBP7V86C3AVRQ1PS', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'WK2QBRKYZFQD4JSJ2H7QVKSWS3',
+     '01HM1FPVAJ7QF3EMFVF6TRTT8N', 'fortune-mustard-oil-1l', 'Fortune Mustard Oil',
+     'Mustard oil, 1 L bottle', 14500, '1 L bottle', false, NULL, 1,
+     true, 14, 'L', 4, true, true,
+     '2026-09-04T11:05:00+05:30', '2026-09-04T11:05:00+05:30'),
+
+    ('5D7HEYD51GRGEMSB84Z6D5VQAQ', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'AMTVQ0PYWQFJYYV17X1Q5R7W5B',
+     '018H9MWZJBGSJZNA5YS62P892A', 'parle-g-biscuits', 'Parle-G Biscuits',
+     'Glucose biscuits, 250 g pack', 3000, '250 g pack', false, 250, 1,
+     true, 60, 'pc', 12, true, true,
+     '2026-09-07T14:00:00+05:30', '2026-09-07T14:00:00+05:30'),
+
+    ('3Z516TRD2QQXR0KGJ7EJCM3HBJ', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'AMTVQ0PYWQFJYYV17X1Q5R7W5B',
+     '018H9MWZJBGSJZNA5YS62P892A', 'lux-soap-bar', 'Lux Soap',
+     'Bathing soap, 100 g bar', 4500, '100 g bar', false, 100, 1,
+     true, 36, 'pc', 12, true, true,
+     '2026-09-07T14:05:00+05:30', '2026-09-07T14:05:00+05:30'),
+
+    ('P331R7S327XZ7QRB25AQJ3WHEX', '01NGD9Y4JMQ2RBNVVKXX7J04DM', 'SJ3MYKT3ZPSC5KZKPR3G892N34',
+     '017RDX7JC6F8XPF6PXXQ6ABYAK', 'milk-bread-400g', 'Milk Bread',
+     'Soft milk bread, 400 g pack', 4000, '400 g pack', false, 400, 1,
+     true, 6, 'pc', 4, true, true,
+     '2026-09-08T11:00:00+05:30', '2026-09-08T11:00:00+05:30'),
+
+    ('1GVSZHRXZ3GNYAMVRAEZW3B0WY', '01NGD9Y4JMQ2RBNVVKXX7J04DM', '1MQQC2GG3VKPEH4A760X321DBX',
+     '01HM1FPVAJ7QF3EMFVF6TRTT8N', 'maggi-noodles-70g', 'Maggi Noodles',
+     'Instant noodles, 70 g pack', 1400, '70 g pack', false, 70, 1,
+     true, 48, 'pc', 12, true, true,
+     '2026-09-09T13:00:00+05:30', '2026-09-09T13:00:00+05:30')
+ON CONFLICT (code) DO UPDATE SET
+    name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    category_id = EXCLUDED.category_id,
+    price_paise = EXCLUDED.price_paise,
+    unit_label = EXCLUDED.unit_label,
+    is_by_weight = EXCLUDED.is_by_weight,
+    weight_grams = EXCLUDED.weight_grams,
+    pack_qty = EXCLUDED.pack_qty,
+    track_stock = EXCLUDED.track_stock,
+    stock_qty = EXCLUDED.stock_qty,
+    stock_unit = EXCLUDED.stock_unit,
+    max_qty_per_order = EXCLUDED.max_qty_per_order,
+    available = EXCLUDED.available,
+    active = EXCLUDED.active;
+
+-- No merchant owner account is seeded. A MERCHANT_STAFF row needs email, phone and — in
+-- practice — a password the owner set by accepting an invitation (§12.3), and a committed
+-- password hash is the one thing §14 forbids. The integration tests create a staff account
+-- with a hash at run time; the demo signs in as a customer or an operator.

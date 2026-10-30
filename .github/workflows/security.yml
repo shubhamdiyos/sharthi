@@ -206,13 +206,20 @@ jobs:
           # while the container runs as root, and git refuses to read a repository it
           # considers owned by somebody else. Without it, gitleaks would scan zero
           # commits and call that a pass.
+          #
+          # --config points at the repository's .gitleaks.toml. It extends the default
+          # rules and adds one allowlist for the integration suites' runtime-hashed
+          # passphrases (`warehouse-lease-2026` and its siblings): the generic-api-key
+          # rule reads `PASSWORD = "..."` as a credential, and a fixture nothing can
+          # verify is not one. The allowlist matches only that shape — lowercase words
+          # and a year — so a mixed-case key of the usual kind is still reported.
           output=$(docker run --rm \
             -v "$GITHUB_WORKSPACE:/repo" \
             -e GIT_CONFIG_COUNT=1 \
             -e GIT_CONFIG_KEY_0=safe.directory \
             -e GIT_CONFIG_VALUE_0=/repo \
             "$GITLEAKS_IMAGE" detect \
-              --source=/repo --redact \
+              --source=/repo --redact --config=/repo/.gitleaks.toml \
             2>&1) || { printf '%s\n' "$output"; exit 1; }
           printf '%s\n' "$output"
 
@@ -253,4 +260,4 @@ jobs:
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/repo" \
             "$GITLEAKS_IMAGE" detect \
-              --no-git --source=/repo --redact
+              --no-git --source=/repo --redact --config=/repo/.gitleaks.toml
