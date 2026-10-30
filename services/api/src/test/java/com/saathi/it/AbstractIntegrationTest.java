@@ -104,8 +104,18 @@ abstract class AbstractIntegrationTest {
         return send(headers(HttpRequest.newBuilder(uri(path)).GET(), headers));
     }
 
+    protected HttpResponse<String> patch(String path, Map<String, String> headers, String body) {
+        return send(headers(HttpRequest.newBuilder(uri(path))
+            .header("Content-Type", "application/json")
+            .method("PATCH", HttpRequest.BodyPublishers.ofString(body)), headers));
+    }
+
     protected HttpResponse<String> delete(String path) {
         return send(HttpRequest.newBuilder(uri(path)).DELETE());
+    }
+
+    protected HttpResponse<String> delete(String path, Map<String, String> headers) {
+        return send(headers(HttpRequest.newBuilder(uri(path)).DELETE(), headers));
     }
 
     protected JsonNode body(HttpResponse<String> response) {

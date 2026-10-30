@@ -22,6 +22,8 @@ public interface ProductRepository extends JpaRepository<Product, String> {
 
     List<Product> findByIdIn(List<String> ids);
 
+    List<Product> findByIdInAndTenantId(List<String> ids, String tenantId);
+
     long countByMerchantIdAndActiveTrue(String merchantId);
 
     /** The storefront listing of one shop, keyset-paged on {@code (name, id)}. */

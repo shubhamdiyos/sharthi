@@ -35,6 +35,8 @@ public final class KeyDerivation {
     public static final String SESSION_TOKEN = "session-token";
     /** CSRF token bound to a session (§12.4's synchroniser pattern). */
     public static final String CSRF_TOKEN = "csrf-token";
+    /** AES-GCM key for the order's contact number at rest (§11.4's progressive disclosure). */
+    public static final String CONTACT_PHONE = "contact-phone";
 
     private KeyDerivation() {
     }
