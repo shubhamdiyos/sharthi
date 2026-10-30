@@ -23,6 +23,8 @@
     <java.version>21</java.version>
     <maven.compiler.release>21</maven.compiler.release>
     <archunit.version>1.5.1</archunit.version>
+    <!-- Not in Boot's dependency management; see the spring-security-crypto comment below. -->
+    <bouncycastle.version>1.82</bouncycastle.version>
   </properties>
 
   <dependencies>
@@ -63,6 +65,23 @@
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
+    </dependency>
+
+    <!-- §12.2 hashes passwords with Argon2id. Only the crypto module of Spring Security is
+         needed, not its filter chain: sessions are the user_session row, not a SecurityContext.
+         Argon2PasswordEncoder delegates the KDF to Bouncy Castle, which is not an optional
+         transitive dependency — Argon2EncodingUtils references
+         org.bouncycastle.crypto.params.Argon2Parameters directly, so a missing BC jar is a
+         NoClassDefFoundError on the first staff login. Boot 4.1.2 manages spring-security-crypto
+         but not bcprov, so the version is pinned in the properties block above. -->
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-crypto</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
     </dependency>
 
     <dependency>

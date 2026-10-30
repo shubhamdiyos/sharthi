@@ -9,15 +9,21 @@ import org.springframework.http.HttpStatus;
  * <p>§10.2 names statuses by number. {@code UNPROCESSABLE_CONTENT} is that table's 422 —
  * Spring deprecated the older constant's name, not the status code.
  *
- * <p><b>Open document gap.</b> §10.2 declares itself closed with 39 codes, and this enum
- * implements exactly those 39. §10.6's endpoint index, however, references 39 further codes
- * that appear nowhere in §10.2 — {@code INVALID_CREDENTIALS}, {@code MFA_REQUIRED},
- * {@code WEAK_PASSWORD}, {@code PASSWORD_REUSED}, {@code PHONE_TAKEN}, {@code FILE_TOO_LARGE},
- * {@code NEGATIVE_STOCK}, {@code WEIGHT_OUT_OF_TOLERANCE}, {@code INSUFFICIENT_CUSTODY},
- * {@code GRANT_ESCALATION} and others. They are deliberately <em>not</em> invented here: two
- * callers choosing between {@code INVALID_CREDENTIALS} and {@code OTP_INVALID} is how §12.4's
- * "identical messaging for every cause" stops being true. Raised for the founder to either add
- * them to §10.2 or replace them in §10.6.
+ * <p><b>Open document gap, and the two codes that stopped being waitable.</b> §10.2 declares
+ * itself closed with 39 codes, and this enum implements that list. §10.5's endpoint index
+ * references 39 further codes that appear nowhere in §10.2 — {@code WEAK_PASSWORD},
+ * {@code PASSWORD_REUSED}, {@code PHONE_TAKEN}, {@code FILE_TOO_LARGE}, {@code NEGATIVE_STOCK},
+ * {@code WEIGHT_OUT_OF_TOLERANCE}, {@code INSUFFICIENT_CUSTODY}, {@code GRANT_ESCALATION} and
+ * others. Those are deliberately <em>not</em> invented here: two callers choosing between
+ * neighbouring codes is how §12.4's "identical messaging for every cause" stops being true.
+ * Raised for the founder to either add them to §10.2 or replace them in §10.5.
+ *
+ * <p>{@code INVALID_CREDENTIALS} and {@code MFA_REQUIRED} were added anyway, because §12.1 makes
+ * every staff sign-in password-then-OTP and no code in §10.2 can say either "that password is
+ * wrong" or "the password was right, now the second factor". {@code UNAUTHENTICATED} would be true
+ * of both and useful for neither; {@code OTP_INVALID} would be a lie about the first. They are the
+ * only members here that are not §10.2's list, and the smallest set without which a staff login
+ * cannot be answered at all.
  */
 public enum ErrorCode {
     VALIDATION_FAILED(HttpStatus.UNPROCESSABLE_CONTENT),
@@ -51,6 +57,9 @@ public enum ErrorCode {
     PAYOUT_RULE_NOT_CONFIGURED(HttpStatus.UNPROCESSABLE_CONTENT),
     RATE_NOT_APPROVED(HttpStatus.UNPROCESSABLE_CONTENT),
     CATEGORY_IN_USE(HttpStatus.CONFLICT),
+    // Not §10.2's list — see the note above. These two and only these.
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED),
+    MFA_REQUIRED(HttpStatus.UNAUTHORIZED),
     OTP_INVALID(HttpStatus.UNAUTHORIZED),
     OTP_EXPIRED(HttpStatus.UNAUTHORIZED),
     OTP_ALREADY_CONSUMED(HttpStatus.UNAUTHORIZED),

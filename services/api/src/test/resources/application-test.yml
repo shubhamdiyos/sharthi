@@ -32,8 +32,11 @@ spring:
 
   jpa:
     hibernate:
-      # No entities exist yet, and the schema is Flyway's, not Hibernate's.
-      ddl-auto: none
+      # The ITs run against the schema Flyway just built, so validating the entities against it
+      # here costs nothing and is the only place a migration and an entity that disagree are
+      # caught before the dev database has to find out. `dev` and `default` already validate;
+      # `prod` does not, for the reason recorded in application-prod.yml.
+      ddl-auto: validate
 
   flyway:
     enabled: true

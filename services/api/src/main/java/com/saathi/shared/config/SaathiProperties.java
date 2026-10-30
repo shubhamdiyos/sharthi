@@ -31,6 +31,15 @@ public record SaathiProperties(
         return "prod".equals(environment);
     }
 
+    /**
+     * The dev-only guards read this instead of {@code !isProduction()}: staging is not dev, and a
+     * provider or a fixture that is safe on a laptop is not safe on a machine that holds real
+     * customer data (§2.2's three environments are separate on purpose).
+     */
+    public boolean isDevelopment() {
+        return "dev".equals(environment);
+    }
+
     /** Object storage is optional in development, so its fields are not validated as required. */
     public record S3(String endpoint, String bucket, String accessKey, String secretKey, String region) {
     }
