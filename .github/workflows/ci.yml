@@ -45,8 +45,11 @@
 #   dropping one trigger would do) and no commit is validated twice.
 # * `timeout-minutes` on every job, so a hung build cannot quietly consume the
 #   hour GitHub would otherwise allow it.
-# * One shared Maven cache entry (see the comment in the jobs) instead of one per
-#   job, and a 7-day retention on the only artifact this workflow uploads.
+# * One Maven cache *key*, shared with security.yml, so a job restores the Spring Boot
+#   graph instead of re-downloading it. GitHub still stores several entries under that
+#   key — measured at four, 261 MB, inside the separate 10 GB cache allowance, and
+#   expiring after 7 days of non-use. Plus a 7-day retention on the only artifact this
+#   workflow uploads, which is 0 bytes on a green run.
 # * Nothing here reads a cloud credential, pushes a container image, or touches an
 #   environment. Publishing starts in release.yml, and that workflow is
 #   deliberately not enabled until GHCR is approved (§7, §13 step 5).

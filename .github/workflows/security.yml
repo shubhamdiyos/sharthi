@@ -22,9 +22,10 @@
 #     storage on an artifact nobody deploys. Trivy runs in release.yml, where the
 #     image that gets scanned is the image that gets shipped.
 #
-# Cost of one run, measured on its first run: 44 s for `dependencies`, 7 s for
-# `secrets` — under a minute of the two together once the tool images are already on
-# the runner, and 68 MB of Maven cache shared with ci.yml rather than a second copy.
+# Cost of one run, measured across its first three: 39 s for `dependencies` (including
+# the 26 ms licence gate) and 12 s for `secrets`. It restores the Maven cache under the
+# same key ci.yml uses rather than re-downloading the graph; the store keeps several
+# entries under that key, which the separate 10 GB cache allowance absorbs.
 # `workflow_dispatch` is there so a scan can be re-run against an already-pushed
 # commit instead of pushing an empty commit to re-trigger it.
 
@@ -214,9 +215,25 @@ jobs:
 
           # The one count that is not brittle: zero commits scanned means the
           # traversal read nothing, whatever the history looks like.
+          #
+          # Split on whitespace and take the token before "commits", not a regex over
+          # the line. The regex version was `s/.*([0-9]+) commits? scanned.*/\1/p`, and
+          # with a greedy `.*` it captured only the *last digit*: "10 commits scanned"
+          # parsed as 0, so the guard reported an empty scan the first time this
+          # history reached ten commits — a red build caused by the check, not the code.
           scanned=$(printf '%s\n' "$output" \
-            | sed -nE 's/.*([0-9]+) commits? scanned.*/\1/p' | tail -1)
-          if [ "${scanned:-0}" -lt 1 ]; then
+            | awk '{ for (i = 2; i <= NF; i++) if ($i == "commits" || $i == "commit") print $(i - 1) }' \
+            | tail -1)
+          # Fail closed on a value `[ -lt ]` cannot read: "no commits scanned" yields
+          # the token "no", and `[ no -lt 1 ]` exits 2, which inside an `if` is simply
+          # "not true" — the guard would then pass without checking anything.
+          case ${scanned:-} in
+            '' | *[!0-9]*)
+              echo "gitleaks commit count unreadable (got '${scanned:-<empty>}'); refusing to call that a pass"
+              exit 1
+              ;;
+          esac
+          if [ "$scanned" -lt 1 ]; then
             echo 'gitleaks scanned no commits: a history scan that read nothing is not a pass'
             exit 1
           fi

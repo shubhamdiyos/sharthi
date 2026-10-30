@@ -11,7 +11,7 @@ planned. Anything that is deliberately **not** enabled is named as such in
 | `ci.yml` | push to any branch, PR into `main`, manual | `unit`, `integration` | The code compiles, the architecture rules hold, the schema builds, the wire contract is the documented one, and the Spring context boots on the properties file that Compose mounts. |
 | `database-migrations.yml` | push/PR **that touches a migration, `infra/ci/`, or the workflow itself** | `migrations` | The PostgreSQL server itself refuses what the design says it refuses, an edited migration is caught by checksum, and re-applying a full set changes nothing. |
 | `security.yml` | push to any branch, PR into `main`, manual | `dependencies`, `secrets` | The exact resolved dependency set carries no unapproved CRITICAL/HIGH advisory and no unapproved licence, and no credential exists anywhere in the history or the working tree. |
-| `.github/dependabot.yml` | Mondays 06:00 IST, **once it is on the default branch** | — | Version updates: configured, grouped, throttled to five open PRs, and unread by GitHub until this file lands on `main` — Dependabot only reads its configuration from the default branch, so the first possible schedule is Monday 2 November. Security alerts: **not available here**, measured as `GET …/dependabot/alerts` → 403 "Dependabot alerts are disabled for this repository". Dependency risk is carried by `security.yml`'s OSV scan, which needs no GitHub feature at all. |
+| `.github/dependabot.yml` | Mondays 06:00 IST, GitHub-side | — | Version updates: grouped and throttled to five open pull requests — and **measured working**, not configured-and-hoped: a `Dependabot Updates` run went green two minutes after this file reached `main`, and PR #4 (`archunit-junit5` 1.4.1 → 1.5.1) arrived from `app/dependabot` with its own CI. Security alerts: **not available here**, `GET …/dependabot/alerts` answers 403 "Dependabot alerts are disabled for this repository". Dependency risk is carried by `security.yml`'s OSV scan, which needs no GitHub feature at all. |
 
 `pull-request.yml` is not a fifth file, and that is a decision rather than an
 omission: §1 requires the pipelines to exist *and* says to combine responsibilities
@@ -147,7 +147,7 @@ work, 110 s of runs that were cancelled mid-job.
 | `security.yml`, one branch push | ~5 min | **51 s** on its first run (`dependencies` 44 s, `secrets` 7 s) and **51 s** again after the licence gate was added (`dependencies` 39 s, `secrets` 12 s) — the new step is 26 ms of `jq` over a file the job already produced |
 | `database-migrations.yml`, one SQL-touching push | ~3 min | **50 s**, and it went red on run 1: the assertion expected the UTC day where the server produced the Indian one. The estimate of its duration was fine; the check was the point. |
 | One commit, all three workflows, both events | — | **302 s = 5.03 Linux min**, measured on the commit that added the licence gate: 192 s of completed `pull_request` work and 110 s spent by the `push` runs before the concurrency group cancelled them |
-| Maven cache | one shared entry, ~250 MB | **one entry, 67.7 MB** (`setup-java-Linux-x64-maven-c5110f…`), written by `unit` and reused by the other two Java jobs. The 10 GB per-repository cache allowance is not in contention. |
+| Maven cache | one shared entry, ~250 MB | **four entries, 261 MB total** — `GET …/actions/caches` lists one 67.6 MB entry under key `…6d8edb48…` and three 64.6 MB entries under `…c5110fbd…`, written between 12:34 and 13:10 UTC on 30 October. The intent (one shared entry restored by every Java job) is what the logs say happens — "Cache hit occurred on the primary key, not saving cache" — but the store shows saves anyway, so the dedupe claim is corrected to the measurement. It is still 2.6 % of the separate 10 GB cache allowance, and entries expire after 7 days of non-use, so the pile is bounded without a cleanup job. |
 | Artifacts per successful run | 0 bytes | **0** — confirmed through the API, not by reading the YAML: `GET /repos/shubhamdiyos/sharthi/actions/runs/41056239592/artifacts` returns `total_count: 0`. Uploads happen only on failure. |
 
 So the honest figure is **~3.2 Linux minutes per set of runs that finishes** — 110 s
@@ -157,6 +157,11 @@ is open pays that once, not twice. Budget **~5 min for a module merge**, ~6-7 mi
 first push happened before the pull request existed and so could not be cancelled.
 At one module a day with three commits in it, that is **~130-180 minutes a month
 against the 2,000 free.**
+
+For calibration, the day these workflows were built is measurable rather than projected:
+**28 runs, 48 jobs, 1,662 seconds = 27.7 Linux minutes**, 1.4 % of the monthly allowance
+spent in one day — and that was the expensive case, with three workflows being written,
+re-validated and debugged. A steady-state module is the ~5 minutes above.
 
 Two numbers this file deliberately does not claim: total account storage and bandwidth.
 Neither is readable through the API available to the repository, both live on the
@@ -177,10 +182,12 @@ Controls that make those numbers stay small:
   Cancelling is a saving, not a refund.
 * **`timeout-minutes` on every job** (10–20), so a hung build cannot drift toward
   the 360-minute platform default.
-* **One Maven cache, shared.** `cache-dependency-path` is scoped to
-  `services/api/pom.xml`, so the key is identical in all three jobs that need Java
-  and the dependency graph is downloaded once. It also means an unrelated pom change
-  elsewhere cannot invalidate a few hundred MB of cached Spring Boot.
+* **One Maven cache key, shared.** `cache-dependency-path` is scoped to
+  `services/api/pom.xml`, so the key is identical in all three jobs that need Java and
+  a job that starts after another has saved restores it instead of re-downloading the
+  graph. It also means an unrelated pom change elsewhere cannot invalidate the cached
+  Spring Boot. What it has *not* achieved is a single stored entry — see the measured
+  row in the table above; four entries exist, and the allowance absorbs them.
 * **No Docker build in CI at all.** Nothing here builds an image: GHCR is not
   approved, so an image would be bytes that no environment runs. `verify` packages
   the jar, which is the same artifact the api image later copies.
