@@ -1,13 +1,21 @@
 # Saathi — production-shaped override for a single host.
 #
-#   docker compose -f infra/docker/docker-compose.yml \
+#   docker compose --env-file .env \
+#                  -f infra/docker/docker-compose.yml \
 #                  -f infra/docker/docker-compose.prod.yml up -d --build
 #
-# This is NOT a deployment strategy. It hardens the same three services for one
-# machine: immutable image tags, no source bind mounts, no published database
-# port, dropped capabilities, read-only filesystems, resource limits. Hosting,
-# managed PostgreSQL, secret storage, TLS termination and multi-node remain
-# OD-10 (System Design §2.2, §16) and nothing here decides them.
+# `--env-file .env` is not decoration. Passing Compose files by path moves the
+# project directory to `infra/docker/`, where the root `.env` is not looked for, so
+# without that flag every `${KEY:?...}` in the development file fails with
+# "required variable … is missing a value" before anything is built. Verified, not
+# theorised: it is the first thing this file was run against.
+#
+# This is NOT a deployment strategy. It hardens the two services that actually
+# run — api and web — for one machine: immutable image tags, no source bind
+# mounts, no published database port, dropped capabilities, read-only
+# filesystems, resource limits. Hosting, managed PostgreSQL, secret storage, TLS
+# termination and multi-node remain OD-10 (System Design §2.2, §16) and nothing
+# here decides them.
 #
 # Build-time note: NEXT_PUBLIC_API_BASE_URL is inlined into the browser bundle,
 # so it must be passed as a build ARG with the real public URL — the runtime
@@ -19,6 +27,13 @@ services:
     build:
       target: runtime
     restart: always
+    # The development file makes this service depend on postgres being healthy. The
+    # override at the bottom of this file moves postgres to a profile nobody enables,
+    # and Compose then refuses the whole project with `service "api" depends on
+    # undefined service "postgres"` — not a warning, an error, before a container is
+    # created. Managed PostgreSQL is reached by URL, so the dependency is dropped
+    # rather than redirected.
+    depends_on: !override {}
     # Managed PostgreSQL (OD-10). Set these three in the deployment secret
     # store; they are deliberately not read from a committed file.
     environment:
@@ -86,14 +101,31 @@ services:
 
   flyway:
     profiles: !override ["tools"]
+    # Same reason as `api`: the database service it waits for is not in this project.
+    depends_on: !override {}
     environment:
       FLYWAY_URL: ${PROD_DB_URL:?set PROD_DB_URL}
       FLYWAY_USER: ${PROD_DB_USER:?set PROD_DB_USER}
       FLYWAY_PASSWORD: ${PROD_DB_PASSWORD:?set PROD_DB_PASSWORD}
-      # Migrations in production run as a separate, reviewed step — never as a
-      # side effect of a rolling restart.
-      FLYWAY_VALIDATE_ONLY: "true"
+    # `validate`, not the development default of `info`, and not
+    # `FLYWAY_VALIDATE_ONLY=*** which Flyway does not read: with that variable set
+    # the container ran a real migration anyway (measured — "Migrating schema
+    # public to version 1", exit 0). What actually keeps a migration off a rolling
+    # restart is this service's `tools` profile, so `up` never starts it, plus
+    # `spring.flyway.enabled: false` in the prod profile, so the API never
+    # migrates on boot; both were observed rather than assumed. With those two in
+    # place, the operator's step is `run --rm flyway`, and it must answer the
+    # question that step is for: is this schema the one the code expects? Against
+    # a migrated database it exits 0; against an unmigrated one it exits 1 with
+    # "Validate failed: Migrations have failed validation".
+    command: !override ["validate"]
 
-networks:
-  saathi_net:
-    name: saathi_prod_net
+# No `networks:` block, deliberately. Renaming the shared network to
+# saathi_prod_net looked tidy and was measured to be a trap: Compose treats the
+# two files as two configurations of one project, so a renamed network makes the
+# old `saathi_net` an orphan and `up -d` tries to remove it — which fails with
+# "network saathi_net has active endpoints" while a development container is
+# attached, and destroys the development topology when none is. Project-level
+# names are pinned in the development file for exactly this reason (§2.2);
+# production inherits them. Two stacks never run on one host anyway — they share
+# container_name values — so a second network name was never buying isolation.
