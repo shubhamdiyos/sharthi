@@ -146,8 +146,8 @@ work, 110 s of runs that were cancelled mid-job.
 | `security.yml`, one branch push | ~5 min | **51 s** on its first run (`dependencies` 44 s, `secrets` 7 s) and **51 s** again after the licence gate was added (`dependencies` 39 s, `secrets` 12 s) — the new step is 26 ms of `jq` over a file the job already produced. Measured again on `7bfd75e`: **39 s** (`dependencies` 29 s, `secrets` 10 s) |
 | `database-migrations.yml`, one SQL-touching push | ~3 min | **50 s**, and it went red on run 1: the assertion expected the UTC day where the server produced the Indian one. The estimate of its duration was fine; the check was the point. |
 | One commit, `ci` + `security`, both events | — | **298 s = 4.97 Linux min** on `7bfd75e`: 143 s of completed `pull_request` work (104 + 39) and **155 s billed by the five `push` jobs that the concurrency group cancelled** (29 + 23 + 64 + 31 + 8). The earlier three-workflow commit measured 302 s; five jobs racing makes the cancelled half more expensive than four did, which is why the commit total did not fall when the completed half did. |
-| Maven cache | one shared entry, ~250 MB | **five entries, 341 MB total** — `GET …/actions/caches` lists them under two keys (`…6d8edb48…`, `…c5110fbd…`), written between 12:34 and 13:47 UTC on 30 October. The intent (one shared entry restored by every Java job) is what the logs say happens — "Cache hit occurred on the primary key, not saving cache" — but the store shows saves anyway, so the dedupe claim is corrected to the measurement. |
-| npm cache | one entry, ~120 MB | **two entries, 243 MB** under the same key for `apps/web/package-lock.json`, because the `push` and `pull_request` web jobs started together on a cold cache and both finished their `npm ci` before the group cancelled the `push` run. `node_modules` for this app is 121 MB compressed; the second entry expires after 7 days of non-use and the next save replaces the key rather than adding a third. |
+| Maven cache | one shared entry, ~250 MB | **five entries, 323 MB** at the end of 30 October — `GET …/actions/caches` lists them under two keys (`…6d8edb48…`, `…c5110fbd…`). The intent (one shared entry restored by every Java job) is what the logs say happens — "Cache hit occurred on the primary key, not saving cache" — but the store shows several, so the dedupe claim is corrected to the measurement. |
+| npm cache | one entry, ~120 MB | **three entries, 345 MB** at the end of 30 October, all under the key for `apps/web/package-lock.json`. Each commit whose `push` and `pull_request` web jobs start together on an uncached key can add one: both finish `npm ci` before the concurrency group cancels the `push` run, and both save. `node_modules` for this app is 121 MB compressed, so the npm key is the fastest-growing part of the store — one entry per racing commit, until entries age out at 7 days. Measured total for everything: **8 entries, 673 MB** (6.6 % of the separate 10 GB cache allowance). |
 | Artifacts per successful run | 0 bytes | **0** — confirmed through the API, not by reading the YAML: `GET /repos/shubhamdiyos/sharthi/actions/runs/41056239592/artifacts` returns `total_count: 0`. Uploads happen only on failure. |
 
 So the honest figure is **~3.2 Linux minutes per set of runs that finishes** — 104 s
@@ -193,9 +193,11 @@ Controls that make those numbers stay small:
 * **One npm cache key, `apps/web` only.** `setup-node` with
   `cache-dependency-path: apps/web/package-lock.json`, so the storefront's install is
   restored by the run after the one that saved it, and an unrelated change elsewhere in
-  the repository cannot bust it. All caching together is **7 entries, 557 MB** — 5.4 % of
-  the separate 10 GB cache allowance, and every entry expires after 7 days of non-use, so
-  the pile is bounded without a cleanup job.
+  the repository cannot bust it. This is the largest and fastest-growing entry: ~121 MB,
+  with a new copy per commit whose two web jobs race on a cold key. The watch threshold
+  is therefore a *count* of npm entries, not total bytes: if the npm key accumulates
+  more than roughly a dozen entries before 7-day expiry catches up, caching it is
+  costing more storage than my not caching would cost in minutes.
 * **No Docker build in CI at all.** Nothing here builds an image: GHCR is not
   approved, so an image would be bytes that no environment runs. `verify` packages
   the jar, which is the same artifact the api image later copies.
