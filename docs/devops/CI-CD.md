@@ -10,7 +10,7 @@ planned. Anything that is deliberately **not** enabled is named as such in
 | --- | --- | --- | --- |
 | `ci.yml` | push to any branch, PR into `main`, manual | `unit`, `integration` | The code compiles, the architecture rules hold, the schema builds, the wire contract is the documented one, and the Spring context boots on the properties file that Compose mounts. |
 | `database-migrations.yml` | push/PR **that touches a migration, `infra/ci/`, or the workflow itself** | `migrations` | The PostgreSQL server itself refuses what the design says it refuses, an edited migration is caught by checksum, and re-applying a full set changes nothing. |
-| `security.yml` | push to any branch, PR into `main`, manual | `dependencies`, `secrets` | The exact resolved dependency set carries no unapproved CRITICAL/HIGH advisory, and no credential exists anywhere in the history or the working tree. |
+| `security.yml` | push to any branch, PR into `main`, manual | `dependencies`, `secrets` | The exact resolved dependency set carries no unapproved CRITICAL/HIGH advisory and no unapproved licence, and no credential exists anywhere in the history or the working tree. |
 | `.github/dependabot.yml` | Mondays 06:00 IST, GitHub-side | — | Version and security updates arrive as pull requests, throttled to five open at a time. |
 
 `pull-request.yml` is not a fifth file, and that is a decision rather than an
@@ -33,11 +33,18 @@ production build — lands in the same pull request as the scaffold.
 | Type-check failure | Java: the compiler *is* the type check. TypeScript: arrives with `apps/web`. |
 | Migration failure | `integration` migrates a fresh database through the application's own Flyway; `database-migrations` re-applies the same set through the Flyway CLI and asserts the server-side constraints. |
 | Unapproved critical vulnerability | `security.yml → dependencies`: a CycloneDX SBOM of the resolved graph, scanned against OSV, gated by `infra/ci/osv-gate.sh` on CRITICAL and HIGH. |
+| Unapproved dependency licence | same job, `infra/ci/license-gate.sh` over the same SBOM: every licence a component *offers* is checked against the approved SPDX ids listed at the top of that script, and a component with no licence metadata fails. |
 | Production build failure | `mvn -B -ntp verify` in `integration` packages the jar that the api image copies. |
 
-"Never bypass failing checks to complete a merge" is enforced by the merge path
-below: a failing run leaves the pull request unmergeable, and `gh pr merge` is
-never given `--admin`.
+"Never bypass failing checks to complete a merge" is **not** machine-enforced on this
+repository, and pretending otherwise would be the most useful lie in this file.
+Required status checks are a branch-protection setting, and on a private repository
+under GitHub Free the API refuses it: *403 "Upgrade to GitHub Pro or make this
+repository public to enable this feature."* So today the rule is held by the merge
+path — `gh pr checks <n> --watch` is read before any merge, and `gh pr merge` is
+never given `--admin` — rather than by GitHub refusing. That is a process, not a
+control, and it is on the list in [Not enabled yet](#not-enabled-yet) because closing
+it properly costs money.
 
 ## The cycle, as actually executed
 
@@ -96,6 +103,7 @@ docker run --rm -v "$PWD:/workspace" -v "$PWD/services/api/target:/sbom" \
   ghcr.io/google/osv-scanner:v2.0.2 scan source -S /sbom/bom.json \
   --all-packages --format json --output /sbom/osv.json
 sh infra/ci/osv-gate.sh services/api/target/osv.json
+sh infra/ci/license-gate.sh services/api/target/bom.json
 
 # Secrets, working tree
 docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 \
@@ -133,9 +141,17 @@ hard stop rather than a meter — an exceeded quota fails runs, it does not invo
 
 So the honest figure is **~3.5 Linux minutes per push that touches SQL**, ~2 minutes
 otherwise — roughly a quarter of what this file estimated before it had run once.
-At three pushes a working day that is ~230 minutes a month against the 2,000 free,
-and a pull request costs the same as a push only until the concurrency group cancels
-the duplicate, which is most of the time.
+At three pushes a working day that is ~230 minutes a month against the 2,000 free.
+
+**A pull request is a second full run, not a cancelled one, in the normal sequence.**
+The concurrency claim needed measuring rather than reasoning: PR #3's three push runs
+were already green when the pull request was opened ~10 minutes later, so nothing was
+in flight to cancel and the `pull_request` event paid for `ci`, `security` and
+`database-migrations` again (its own jobs ran 70 s, 64 s, 56 s). The group saves those
+minutes only when the pull request is opened *while* the push run is still going, which
+is not how this cycle works — the cycle waits for green before opening the PR. Budget
+one full run for the push and one for the pull request: **~7 minutes per module
+merge**, ~10 including a SQL-touching migration run.
 
 Two numbers this file deliberately does not claim: total account storage and bandwidth.
 Neither is readable through the API available to the repository, both live on the
@@ -146,12 +162,14 @@ They belong in the founder's monthly check, listed in
 
 Controls that make those numbers stay small:
 
-* **One run per change, not per event.** `concurrency` is keyed on the branch name
-  for both `push` and `pull_request`, so the pull request opened from a push cancels
-  the queued duplicate instead of running the same validation twice. Neither event
-  was dropped — that would leave a commit unmonitored — the second one is cancelled
-  as soon as it starts. `cancel-in-progress` stops billing for an aborted run
-  immediately.
+* **One run per change, per event.** `concurrency` is keyed on the branch name for
+  both `push` and `pull_request`, so a second push to a branch that already has a run
+  in flight cancels the older one instead of validating two commits whose first is
+  already obsolete. Neither event was dropped — that would leave a commit unmonitored
+  — and the group does *not* merge the push and pull-request runs of the same commit
+  into one, because they start under different `run_id`s and the second only cancels
+  the first if the first has not finished. Measured above.
+  `cancel-in-progress` stops billing for an aborted run immediately.
 * **`timeout-minutes` on every job** (10–20), so a hung build cannot drift toward
   the 360-minute platform default.
 * **One Maven cache, shared.** `cache-dependency-path` is scoped to
@@ -174,18 +192,22 @@ Controls that make those numbers stay small:
 * **Dependabot's own throttle.** `open-pull-requests-limit: 5`, weekly, grouped by
   ecosystem — because every PR it opens costs the minutes in the table above.
 
-At the current rate — roughly one module a day, two or three pushes per module,
-~13 minutes per push across the three workflows — the monthly projection is in the
-low hundreds of the 2,000 free minutes, and nothing in this pipeline can reach a
-paid feature without a human changing a setting.
+At the current rate — one module a day, three pushes into it and one pull request,
+~13 Linux minutes per module across the three workflows — the monthly projection is
+~400 of the 2,000 free minutes with no discount for cancelled runs. Nothing in this
+pipeline can reach a paid feature without a human changing a setting, and the spending
+limit that would catch a mistake is $0.
 
 ## Not enabled yet
 
 Each of these is a decision the founder has not approved, so none of them is
-switched on "so that it is ready". They are listed in the order §13 sets out.
+switched on "so that it is ready". They are listed in the order §13 sets out, except
+the first row: merge protection belongs to §3's cycle, and it is here because it is
+the only one of these that a script cannot work around.
 
 | Step | What it needs | Cost position |
 | --- | --- | --- |
+| 3 — Merge protection | Branch protection on `main`: the four check names as required contexts, and "require branches to be up to date before merging" so a PR that fell behind `main` is re-validated rather than merged on an old verdict. Attempted through the API; it returned **403 "Upgrade to GitHub Pro or make this repository public to enable this feature."** | **GitHub Pro for the account, or making the repository public.** Public visibility would enable it for free but publishes the source, the merchant onboarding logic and the pilot data model, so it is a business decision rather than a setting. Neither is taken without approval. |
 | 5 — GHCR images | `release.yml`: build api + web once per `v*` tag, SHA-tag them, scan them with Trivy, attach the SBOM, then push. A retention rule to delete old versions. | GitHub Packages gives 500 MB free, **shared with the artifact allowance above**; container storage beyond that is billed per GB-month. Needs approval, and needs a retention policy decided before the first push. |
 | 6 — Staging | A cloud account, a managed Postgres, DNS, TLS. Deployment workflows with a `staging` environment. | Any real cloud resource is paid, and it is the reason the "cloud-portable" parts of the design (12-factor config, one image per service, no host paths, no local sockets) exist. **Nothing is provisioned without explicit approval.** |
 | 7 — Production | The same as staging plus a protected environment with a required-approver gate, and OIDC to the cloud provider instead of a stored access key. | Same. OIDC itself is free and is the design's preference precisely so that no long-lived cloud credential ever exists in this repository. |
@@ -212,6 +234,12 @@ of it.
   advisory in a resolved dependency. Upgrade through a PR, or, if the advisory does
   not apply, say so in `docs/devops/SECURITY.md` and add a pinned ignore — not in
   the workflow, which is where a silent exception would hide.
+* `security.yml → dependencies` red with `UNAPPROVED` rows → a resolved dependency
+  whose every offered licence is outside the approved list in
+  `infra/ci/license-gate.sh`, or which arrived with no licence metadata. Either
+  upgrade to a version under an approved licence, or make the call in that script and
+  in the commit message. A missing licence field is treated as unapproved on purpose:
+  that is what a repackaged artifact looks like.
 * `security.yml → secrets` red with "gitleaks found the canary…" absent → the scan
   itself is broken, which is treated as a failure on purpose. See SECURITY.md.
 * A run that is cancelled rather than failed → the same branch pushed again; the

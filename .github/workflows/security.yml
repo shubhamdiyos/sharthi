@@ -5,13 +5,17 @@
 # product, and two deliberate omissions are worth naming because they are the
 # obvious things a reader would expect to see:
 #
-#   * gitleaks/gitleaks-action and CodeQL are NOT used. Both are GitHub-first-party
-#     security products that, on a private repository, sit behind GitHub Advanced
-#     Security — a paid licence. The mandate is zero unexpected cost, so the same
-#     two checks are made with the tools themselves: gitleaks from its image, and
-#     the static analysis that SpotBugs and ArchUnit already run inside `mvn verify`
-#     in ci.yml. If the founder later buys GHAS, this file becomes the place to
-#     switch to the native actions.
+#   * gitleaks/gitleaks-action, CodeQL and actions/dependency-review-action are NOT
+#     used. All three are GitHub-first-party security products that, on a private
+#     repository, sit behind GitHub Advanced Security — a paid licence. The mandate is
+#     zero unexpected cost, so the same checks are made with the tools themselves:
+#     gitleaks from its image, the dependency and licence gates from the two scripts
+#     in infra/ci, and the static analysis that SpotBugs and ArchUnit already run
+#     inside `mvn verify` in ci.yml. dependency-review was tried first, on the
+#     assumption a native action is cheaper than a script; its run failed with
+#     "Dependency review is not supported on this repository", which is that paywall
+#     speaking, and the check came back as 25 lines of jq. If the founder later buys
+#     GHAS, this file becomes the place to switch to the native actions.
 #   * Container image scanning is not here yet, because there is no image: GHCR
 #     publishing is a billable-adjacent decision that has not been approved (§7),
 #     and building an image in CI only to scan it would spend minutes and free
@@ -101,6 +105,18 @@ jobs:
         shell: bash
         run: sh infra/ci/osv-gate.sh "$RUNNER_TEMP/osv-api.json"
 
+      # Licences are checked here, against the same SBOM, rather than by
+      # `actions/dependency-review-action`. That action's first run on a pull request
+      # failed with "Dependency review is not supported on this repository … enable
+      # Dependency graph along with GitHub Advanced Security" — on a private repository
+      # under the free plan, that is a paid licence, so the check moved into the
+      # script instead of the plan being upgraded. `npm` lockfiles carry no licence
+      # metadata, so the frontend's licence review is not covered here and is not
+      # claimed below.
+      - name: Fail on a dependency outside the approved licences
+        shell: bash
+        run: sh infra/ci/license-gate.sh "$API_DIR/target/bom.json"
+
       # The frontend is lockfile-scanned the same way once it exists; osv-scanner
       # reads package-lock.json directly, so no SBOM generator is needed there.
       # Guarded by the file rather than run unconditionally, because a scan step
@@ -123,16 +139,6 @@ jobs:
             || true
           test -s "$RUNNER_TEMP/osv-web.json"
           sh infra/ci/osv-gate.sh "$RUNNER_TEMP/osv-web.json"
-
-      # PRs only, and only here rather than in its own job: one step, no extra
-      # runner, and it answers the narrower question — does this pull request add a
-      # dependency that GitHub already knows to be vulnerable.
-      - name: Review dependencies introduced by the pull request
-        if: github.event_name == 'pull_request'
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
-          allow-licenses: Apache-2.0, BSD-2-Clause, BSD-3-Clause, MIT, EPL-2.0, LGPL-2.1-only, CDDL-1.1
 
   secrets:
     name: Leaked credentials

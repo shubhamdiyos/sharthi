@@ -9,7 +9,7 @@ who has to decide whether to trust a green run.
 | Check | Tool, pinned | Where | What it can catch |
 | --- | --- | --- | --- |
 | Dependency vulnerabilities | `ghcr.io/google/osv-scanner:v2.0.2` over a CycloneDX SBOM produced by `org.cyclonedx:cyclonedx-maven-plugin:2.9.1` | `.github/workflows/security.yml → dependencies` | Any advisory in the OSV database against the **124 components the build actually resolved**, test scope included. |
-| Dependency diff on a pull request | `actions/dependency-review-action@v4` | same job, PR events only | A dependency introduced or upgraded by *this* pull request that GitHub already knows to be vulnerable, or whose licence is not on the allow-list. |
+| Dependency licences | `infra/ci/license-gate.sh` over the same SBOM, with `jq` | same job, every event | A resolved dependency whose every offered licence is outside the approved list — or which carries no licence metadata at all. Replaces `actions/dependency-review-action`, which cannot run on this repository (see [Not enabled](#not-enabled-and-on-what-grounds)). |
 | Secrets in history | `ghcr.io/gitleaks/gitleaks:v8.21.2`, `detect --source=/repo --redact` | `security.yml → secrets` | A credential committed in any commit reachable from the checked-out branch, including ones later deleted. |
 | Secrets in the working tree | the same image with `--no-git` | same job | A secret that reached the tree through a merge and never appeared as an added line in a single commit — the gap the history scan leaves. |
 | Scanner self-test | a synthetic GitHub PAT in `RUNNER_TEMP` | same job, first step | The scan silently reading nothing. See [Why the canary exists](#why-the-canary-exists). |
@@ -36,6 +36,17 @@ anything":
 * gitleaks exits non-zero on any finding. The commit scan additionally requires
   **at least one commit scanned**, so "no leaks found" cannot be reported by a
   traversal that read nothing.
+* **Licences: a component passes when any licence it *offers* is approved.** Every
+  current dependency does — `logback` is EPL-2.0 *or* LGPL-2.1-only, `HdrHistogram`
+  is CC0-1.0 *or* BSD-2-Clause, ArchUnit is Apache-2.0 *or* BSD-4-Clause, the Jakarta
+  APIs are EPL-2.0 *or* GPL-2.0-with-classpath-exception — and the allow-list is
+  narrower than the tree needs, which is what lets it be trusted to be red. An
+  `AGPL-3.0-only` dependency, or one with no licence metadata, fails the build by
+  name. The list lives in `infra/ci/license-gate.sh` so that widening it is a commit
+  with a message, not a settings change nobody sees.
+* **The licence gate covers Maven only.** `package-lock.json` carries no licence
+  field, so the frontend's dependencies get the OSV advisory scan and not a licence
+  verdict. Saying otherwise would be the false green this file keeps closing.
 
 ## Permissions, and what CI cannot reach
 
@@ -113,6 +124,8 @@ of this step lie:
 | Absent | Why |
 | --- | --- |
 | **CodeQL / `gitleaks/gitleaks-action`** | On a private repository both are GitHub Advanced Security features, and GHAS is licensed per committer. The mandate is zero unexpected cost, so the equivalents are the tools themselves, run from pinned images. If GHAS is bought, these replace the two jobs above. |
+| **`actions/dependency-review-action`** | Tried first, on the assumption that a native action is cheaper than a script. On a pull request it failed with *"Dependency review is not supported on this repository. Please ensure that Dependency graph is enabled along with GitHub Advanced Security"* — the same paywall, in the same sentence. Its licence half is now `infra/ci/license-gate.sh`; its vulnerability half is subsumed, because osv-scanner reads the whole resolved tree rather than only the PR's diff, and runs on pushes as well as pull requests. |
+| **Required status checks on `main`** | Attempted through the API with the four real check names; GitHub Free returns **403 "Upgrade to GitHub Pro or make this repository public to enable this feature."** So nothing currently *prevents* a merge with red checks — see [CI-CD.md → The cycle](CI-CD.md#the-cycle-as-actually-executed) for what enforces it instead, and why the answer is a plan decision rather than a script. |
 | **Container image scanning (Trivy)** | There is no image. GHCR publishing is not approved, and building an image in CI only to scan it spends minutes and storage on an artifact nothing runs. Trivy belongs in `release.yml`, scanning the image that is about to be pushed. |
 | **SpotBugs / Checkstyle / PMD** | Not declared in `services/api/pom.xml`, so this file does not claim them. "Static analysis" here means the compiler, ArchUnit, and Spring's binder. SpotBugs costs roughly a minute per run and free cache, so the reason it is absent is not money: on a kernel this size it reports mostly `EI_EXPOSE_REP` on value types, and an exclusion policy is a decision about which findings the team intends to read. Decide that, then add it in one place. |
 | **Secret-scanning push protection** | A repository-settings change; it is on GitHub's side, not in a file here, and turning on account-level security features is exactly the class of change this project asks permission for first. |
