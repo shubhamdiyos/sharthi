@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.MDC;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -20,8 +21,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * cannot be used to inject arbitrary text into structured logs.
  */
 @Component
+@Order(RequestIdFilter.ORDER)
 @RequiredArgsConstructor
 public class RequestIdFilter extends OncePerRequestFilter {
+
+    /** Runs first, so a request id is in the MDC before anything else can log or be refused. */
+    public static final int ORDER = 0;
 
     public static final String HEADER = "X-Request-Id";
     public static final String MDC_KEY = "request_id";

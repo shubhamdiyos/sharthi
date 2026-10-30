@@ -9,7 +9,7 @@
 # without approval) both say the same thing: do not buy the feature, write the check.
 #
 # The data the action would have read is already in this repository's own CycloneDX
-# SBOM: 124 components, every one of them carrying licence metadata. So this is a jq
+# SBOM: 126 components, every one of them carrying licence metadata. So this is a jq
 # filter, not a GitHub feature, and it adds about a second to a job that already built
 # the SBOM for the osv-scanner step above.
 #
@@ -26,13 +26,34 @@
 # tomorrow. Adding an entry is a decision made in print, not a gate that widens itself
 # to match whatever arrived.
 #
+# It has been widened once, and that addition is the pattern: `Bouncy Castle Licence`,
+# the KDF that §12.2's Argon2id passwords run on, pulled in by spring-security-crypto.
+# Its pom names the licence and links https://www.bouncycastle.org/licence.html, whose
+# text is the MIT permission notice under a different copyright holder — the page says
+# so itself ("should be read in the same way as the MIT license"). SPDX has no
+# identifier for it (checked against the 740-entry licence list), so CycloneDX can only
+# report `.license.name`, and the only way to approve it is to approve that string.
+# The alternative was not "a permitted licence": it was dropping Argon2id or hand-porting
+# the KDF, both of which §12.2 forbids.
+#
+# One licence per line, because the name above has spaces in it and a
+# space-separated list would have matched "Bouncy", "Castle" and "Licence" as three
+# entries — and a gate that splits its own policy is a gate that approves anything.
+#
 # Usage: infra/ci/license-gate.sh <cyclonedx bom.json>
 set -eu
 
 bom=${1:?usage: infra/ci/license-gate.sh <cyclonedx bom.json>}
 [ -s "$bom" ] || { echo "no SBOM at $bom: the CycloneDX step produced nothing"; exit 1; }
 
-allowed='Apache-2.0 BSD-2-Clause BSD-3-Clause MIT EPL-2.0 LGPL-2.1-only CDDL-1.1'
+allowed='Apache-2.0
+BSD-2-Clause
+BSD-3-Clause
+MIT
+EPL-2.0
+LGPL-2.1-only
+CDDL-1.1
+Bouncy Castle Licence'
 
 components=$(jq '.components | length' "$bom")
 if [ "${components:-0}" -eq 0 ]; then
@@ -42,7 +63,7 @@ fi
 
 offenders=$(
     jq -r --arg allowed "$allowed" '
-        ($allowed | split(" ")) as $ok
+        ($allowed | split("\n") | map(select(length > 0))) as $ok
         | .components[]
         | ((.licenses // []) | map(.license.id // .expression // .license.name // "?")) as $offered
         | select(($offered | map(select(. as $l | $ok | index($l)))) | length == 0)
@@ -52,13 +73,15 @@ offenders=$(
 
 # Counted from the list above rather than written twice, so the log line cannot drift
 # from the policy it is reporting.
-approved=$(printf '%s' "$allowed" | tr ' ' '\n' | grep -c .)
+approved=$(printf '%s\n' "$allowed" | grep -c .)
 echo "licence gate: $components component(s) read against $approved approved licence(s)"
 
 # The distribution is printed even when it passes. A reviewer asking "what licences do
 # we actually ship?" should get an answer from the log, not from a second run.
+# `.license.id` only, so a pom-named licence is absent from this histogram but still
+# checked above — the histogram answers "what do we ship", the gate answers "is it ok".
 jq -r '
-    [ .components[] | (.licenses // [])[] | .license.id // empty ]
+    [ .components[] | (.licenses // [])[] | .license.id // .license.name // empty ]
     | group_by(.)
     | map({ id: .[0], count: length })
     | sort_by(-.count)

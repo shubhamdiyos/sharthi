@@ -80,7 +80,13 @@ public final class CursorPager {
         return "~null~".equals(value) ? null : value;
     }
 
-    private static ApiException badCursor() {
+    /**
+     * The refusal every cursor reader raises, so a list endpoint that decodes its own key cannot
+     * invent a fourth wording for "that value is not one of mine". Public because a caller that
+     * pages over rows already in memory has to parse a cursor without {@link #decode} deciding what
+     * a legal key is.
+     */
+    public static ApiException badCursor() {
         throw new ApiException(ErrorCode.VALIDATION_FAILED, "cursor is not recognised",
             Map.of("field_errors", List.of(Map.of("field", "cursor", "message", "opaque value; do not construct"))));
     }

@@ -32,7 +32,7 @@ once in Failsafe, so there was never a run of a frontend job with no frontend.
 | Type-check failure | Java: the compiler *is* the type check. TypeScript: `tsc --noEmit` in `web`, before the build, so the message names the file rather than a bundler stage. |
 | Migration failure | `integration` migrates a fresh database through the application's own Flyway; `database-migrations` re-applies the same set through the Flyway CLI and asserts the server-side constraints. |
 | Unapproved critical vulnerability | `security.yml → dependencies`: a CycloneDX SBOM of the resolved graph, scanned against OSV, gated by `infra/ci/osv-gate.sh` on CRITICAL and HIGH. |
-| Unapproved dependency licence | same job, `infra/ci/license-gate.sh` over the same SBOM: every licence a component *offers* is checked against the approved SPDX ids listed at the top of that script, and a component with no licence metadata fails. |
+| Unapproved dependency licence | same job, `infra/ci/license-gate.sh` over the same SBOM: every licence a component *offers* is checked against the approved list at the top of that script — SPDX ids, plus one pom-declared licence name (`Bouncy Castle Licence`, which has no SPDX id; the reasoning is in `SECURITY.md`) — and a component with no licence metadata fails. |
 | Production build failure | `mvn -B -ntp verify` in `integration` packages the jar that the api image copies; `next build` in `web` produces the `.next/standalone` tree the web image copies. |
 
 "Never bypass failing checks to complete a merge" is **not** machine-enforced on this
@@ -149,28 +149,34 @@ race that produced the extra cache entries below.
 | `ci.yml`, one branch push | ~8 min (2 min unit + 6 min integration) | **110 s** with two jobs (`unit` 38 s, `integration` 72 s, cold cache), then **104 s** with the `web` job added on `7bfd75e`: `unit` 19 s, `integration` 56 s (warm Maven), `web` 29 s (cold npm cache, install 10 s) |
 | `security.yml`, one branch push | ~5 min | **51 s** on its first run (`dependencies` 44 s, `secrets` 7 s) and **51 s** again after the licence gate was added (`dependencies` 39 s, `secrets` 12 s) — the new step is 26 ms of `jq` over a file the job already produced. Measured again on `7bfd75e`: **39 s** (`dependencies` 29 s, `secrets` 10 s) |
 | `database-migrations.yml`, one SQL-touching push | ~3 min | **50 s**, and it went red on run 1: the assertion expected the UTC day where the server produced the Indian one. The estimate of its duration was fine; the check was the point. |
-| One commit, `ci` + `security`, both events | — | **298 s = 4.97 Linux min** on `7bfd75e`: 143 s of completed `pull_request` work (104 + 39) and **155 s billed by the five `push` jobs that the concurrency group cancelled** (29 + 23 + 64 + 31 + 8). The earlier three-workflow commit measured 302 s; five jobs racing makes the cancelled half more expensive than four did, which is why the commit total did not fall when the completed half did. **This row is the behaviour before `push` was narrowed to `main`, and it is kept because it is what the fix was priced against** — the duplicate set it describes no longer starts. Its replacement has not been measured yet; the first run under the narrowed triggers is the commit that narrows them, and the figure belongs here once a normal module merge has produced it. |
-| Maven cache | one shared entry, ~250 MB | **five entries, 323 MB** at the end of 30 October — `GET …/actions/caches` lists them under two keys (`…6d8edb48…`, `…c5110fbd…`). The intent (one shared entry restored by every Java job) is what the logs say happens — "Cache hit occurred on the primary key, not saving cache" — but the store shows several, so the dedupe claim is corrected to the measurement. |
+| One commit, `ci` + `security`, both events | — | **298 s = 4.97 Linux min** on `7bfd75e`: 143 s of completed `pull_request` work (104 + 39) and **155 s billed by the five `push` jobs that the concurrency group cancelled** (29 + 23 + 64 + 31 + 8). The earlier three-workflow commit measured 302 s; five jobs racing makes the cancelled half more expensive than four did, which is why the commit total did not fall when the completed half did. **This row is the behaviour before `push` was narrowed to `main`, and it is kept because it is what the fix was priced against** — the duplicate set it describes no longer starts. Its replacement is measured on the first module merged under the narrowed triggers: PR #12, three pushes, `ci` + `security` + `database-migrations` each starting exactly once per push and **no job cancelled at all**. **825 s = 13.8 Linux min for the module**, 295 s + 283 s + 247 s, the last set the green one. Per-commit that is ~4.6 min against the ~5 min the duplicate-trigger commit cost — but the comparison that matters is what the money bought: two of those three sets went red on gates no local run can reproduce (an OSV advisory against a jar the pom pinned, then the licence gate behind it), and none of it was spent on a cancelled twin. |
+| Maven cache | one shared entry, ~250 MB | **seven entries under four keys, 470 MB** at the end of 30 October — `GET …/actions/caches` lists them, and two effects are visible in that list rather than one. Three keys hold more than one entry (`…c5110fbd…` holds three identical 64 MB copies): GitHub keeps older versions of a key it is asked to save again, so "one entry per key" was never the storage model. And the key itself is a hash of `services/api/pom.xml`, so each dependency edit in that file mints another one — the fourth appeared when `bcprov-jdk18on` moved 1.82 → 1.85 to clear the OSV gate. What a new key actually costs is one download, not a rebuild: `unit` was 54 s on the first run after the pom change (prefix restore, fetch the new jar, save) and 23 s on the next run of the same pom. The dedupe claim is corrected to the measurement. |
 | npm cache | one entry, ~120 MB | **three entries, 345 MB** at the end of 30 October, all under the key for `apps/web/package-lock.json`. Each commit whose `push` and `pull_request` web jobs start together on an uncached key can add one: both finish `npm ci` before the concurrency group cancels the `push` run, and both save. `node_modules` for this app is 121 MB compressed, so the npm key is the fastest-growing part of the store — one entry per racing commit, until entries age out at 7 days. Narrowing `push` to `main`
-closes that source: one `web` job per commit means one save per key. Measured total for everything: **8 entries, 673 MB** (6.6 % of the separate 10 GB cache allowance). |
+closes that source: one `web` job per commit means one save per key. Measured total for everything: **10 entries, 818 MB** (8.0 % of the separate 10 GB cache allowance). |
 | Artifacts per successful run | 0 bytes | **0** — confirmed through the API, not by reading the YAML: `GET /repos/shubhamdiyos/sharthi/actions/runs/41056239592/artifacts` returns `total_count: 0`. Uploads happen only on failure. |
 
-So the honest figure is **~3.2 Linux minutes per set of runs that finishes** — 104 s
-of `ci` + 39 s of `security` + 50 s of `database-migrations`, roughly a quarter of what
-this file estimated before it had run once. A module merge is **two** sets, and saying
+So the honest figure is **~3-4 Linux minutes per set of runs that finishes**, and the
+spread is the suite's own growth rather than a measurement error: the 193 s set below was
+taken when the integration suite was smaller, and PR #12's green set cost **247 s** —
+`ci` 139 s (unit 23, integration 81, web 35) + `security` 42 s + `database-migrations` 66 s
+— with 93 integration tests against PostgreSQL. Both are well under what this file
+estimated before it had run once. A module merge is **two** sets, and saying
 only one would be the kind of arithmetic that gets budgets wrong: the `pull_request` set
 that gates the merge, and the `main` set that validates the merge commit, because the
-merge commit is the artefact that ships. Budget **~6.5 min per module**, against the
-**5.0 min measured on `7bfd75e`** when a commit paid for both events on the same branch
-plus the cancelled twins. The saving is not the interesting part; the interesting part is
-that the expensive half of the old number bought nothing.
-At one module a day with three commits in it, that is **~130-190 minutes a month
-against the 2,000 free.**
-
+merge commit is the artefact that ships. PR #12 is the first module measured end to end
+under the narrowed triggers, so the budget comes from it rather than from a per-job sum:
+**13.8 min for its three pushes** — 295 s, 283 s, 247 s, the last one green — **plus the
+`main` set the merge starts**, the same jobs on the same code, recorded above once it has
+been measured rather than predicted. A three-commit module is therefore **~18 min**, and
+the cost driver is visible in the numbers: two of those three sets were spent going red on
+a gate, which is the expensive part of writing a module and the part that shrinks as
+modules stop adding dependencies.
+At one module a working day, that is **~360 minutes a month against the 2,000 free** —
+under a fifth of the allowance, and the figure to re-measure rather than defend.
 For calibration, the day these workflows were built is measurable rather than projected:
 **28 runs, 48 jobs, 1,662 seconds = 27.7 Linux minutes**, 1.4 % of the monthly allowance
 spent in one day — and that was the expensive case, with three workflows being written,
-re-validated and debugged. A steady-state module is the ~5 minutes above.
+re-validated and debugged.
 
 Two numbers this file deliberately does not claim: total account storage and bandwidth.
 Neither is readable through the API available to the repository, both live on the

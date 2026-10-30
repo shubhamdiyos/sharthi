@@ -34,7 +34,7 @@ updates:
       prefix: chore
       include: scope
     groups:
-      # One PR per ecosystem-and-kind rather than one per artifact: 124 resolved
+      # One PR per ecosystem-and-kind rather than one per artifact: 126 resolved
       # components against 5 open PRs needs grouping to stay reviewable.
       spring-boot:
         patterns:

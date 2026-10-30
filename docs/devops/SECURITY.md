@@ -8,7 +8,7 @@ who has to decide whether to trust a green run.
 
 | Check | Tool, pinned | Where | What it can catch |
 | --- | --- | --- | --- |
-| Dependency vulnerabilities | `ghcr.io/google/osv-scanner:v2.0.2` over a CycloneDX SBOM produced by `org.cyclonedx:cyclonedx-maven-plugin:2.9.1` | `.github/workflows/security.yml → dependencies` | Any advisory in the OSV database against the **124 components the build actually resolved**, test scope included. |
+| Dependency vulnerabilities | `ghcr.io/google/osv-scanner:v2.0.2` over a CycloneDX SBOM produced by `org.cyclonedx:cyclonedx-maven-plugin:2.9.1` | `.github/workflows/security.yml → dependencies` | Any advisory in the OSV database against the **126 components the build actually resolved**, test scope included. |
 | Dependency licences | `infra/ci/license-gate.sh` over the same SBOM, with `jq` | same job, every event | A resolved dependency whose every offered licence is outside the approved list — or which carries no licence metadata at all. Replaces `actions/dependency-review-action`, which cannot run on this repository (see [Not enabled](#not-enabled-and-on-what-grounds)). |
 | Secrets in history | `ghcr.io/gitleaks/gitleaks:v8.21.2`, `detect --source=/repo --redact` | `security.yml → secrets` | A credential committed in any commit reachable from the checked-out branch, including ones later deleted. |
 | Secrets in the working tree | the same image with `--no-git` | same job | A secret that reached the tree through a merge and never appeared as an added line in a single commit — the gap the history scan leaves. |
@@ -44,6 +44,16 @@ anything":
   `AGPL-3.0-only` dependency, or one with no licence metadata, fails the build by
   name. The list lives in `infra/ci/license-gate.sh` so that widening it is a commit
   with a message, not a settings change nobody sees.
+* **It has been widened once, in the pull request that added Argon2id.** Bouncy Castle —
+  the KDF `spring-security-crypto` delegates Argon2id to, so §12.2 requires it — declares
+  one licence, `Bouncy Castle Licence`, which has no SPDX identifier (checked against the
+  740-entry SPDX list) and so reaches the SBOM as a name rather than an id. Its licence
+  page states the text is the MIT permission notice under the Legion of the Bouncy Castle
+  copyright and "should be read in the same way as the MIT license". Approving it adds an
+  eighth entry and changes how the list is parsed: one licence per line, because a
+  space-separated list would have matched `Bouncy`, `Castle` and `Licence` as three. The
+  match stays exact — a component naming itself `Bouncy Castle License`, one letter
+  different, is still blocked, which is the first case the negative test checks.
 * **The licence gate covers Maven only.** `package-lock.json` carries no licence
   field, so the frontend's dependencies get the OSV advisory scan and not a licence
   verdict. Saying otherwise would be the false green this file keeps closing.
@@ -143,9 +153,15 @@ declines to invent them:
 2. **Storage used by artifacts and packages**, against the 500 MB pooled allowance.
    This pipeline uploaded 0 artifacts across its first run, and no packages exist.
 3. **`gh api /repos/shubhamdiyos/sharthi/actions/caches`** — measured at the end of
-   30 October: **8 entries, 673 MB** — five under the `setup-java-Linux-x64-maven-…`
-   keys the Java jobs share (323 MB), and three of ~115 MB under the
-   `node-cache-Linux-x64-npm-…` key for `apps/web` (345 MB). The npm copies accumulate
+   30 October: **10 entries, 818 MB** — seven under the `setup-java-Linux-x64-maven-…`
+   keys the Java jobs share (470 MB), and three of ~115 MB under the
+   `node-cache-Linux-x64-npm-…` key for `apps/web` (347 MB). The seven Maven copies sit
+   under **four** keys, and that is the mechanism worth understanding rather than
+   mourning: the key is a hash of `services/api/pom.xml`, so every dependency edit in
+   that file mints a new one. The fourth appeared when `bcprov-jdk18on` moved 1.82 → 1.85
+   to clear the OSV gate. `setup-java` then restores the previous entry by prefix and
+   downloads only the jar that changed, which is why the first run under a new key cost
+   54 s in `unit` and the next run under the same key cost 23 s. The npm copies accumulate
    one per commit whose `push` and `pull_request` web jobs race on a cold key; that is
    the number to watch, not the total. The ceiling is a separate 10 GB per repository,
    and entries expire after 7 days of non-use, so a growing pile is bounded — but the

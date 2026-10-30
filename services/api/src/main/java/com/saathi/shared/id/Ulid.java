@@ -22,7 +22,8 @@ public final class Ulid {
     private static final int RANDOM_BYTES = RANDOM_BITS / Byte.SIZE;
     private static final int TIMESTAMP_CHARS = 10;
     private static final int RANDOM_CHARS = 16;
-    private static final int LENGTH = TIMESTAMP_CHARS + RANDOM_CHARS;
+    /** A ULID is always 26 characters, so callers that parse one can check the length first. */
+    public static final int LENGTH = TIMESTAMP_CHARS + RANDOM_CHARS;
 
     static {
         java.util.Arrays.fill(DECODING, -1);
