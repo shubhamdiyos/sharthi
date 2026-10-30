@@ -196,6 +196,22 @@ two pushes and a merge, **880 s = 14.7 Linux min**, 0.7 % of the allowance.
 The estimate before the first push was the ~13 min the paragraph above predicts for this
 shape; the difference is the cold OSV scan, paid once and not again.
 
+Day 1C (PR #18) is the cheapest shape so far: one push and a merge, **571 s = 9.5 Linux
+min**, 0.5 % of the allowance, and no set went red.
+
+| | Measured on PR #18 |
+| --- | --- |
+| Push 1 `e3bae7d` | 287 s — `ci` 150 (unit 28, integration 96, web 26), `security` 41 (`dependencies` 31, `secrets` 10), Flyway 96 |
+| Merge `e37eb6d` on `main` | 284 s — unit 38, web 35, integration 75, `dependencies` 40, `secrets` 11, Flyway 85 |
+| **The whole module** | **571 s = 9.5 Linux min**, 0.5 % of the monthly allowance |
+| Cache after the module | **16 entries, 1,379 MB** — unchanged in size from the Day 1B snapshot: the pom and the lockfile did not move, so every job restored and re-saved the keys it already had |
+| Artifacts | **0 bytes** — `GET …/actions/artifacts` still reports none |
+
+The integration job is the row to watch as modules land: 96 s here against 75–83 s on the
+earlier modules, because the cart/quote/order suite adds a Flyway-recreated database and
+eleven HTTP tests. The estimate before the push was ~4.5 min per set, the same shape as
+Day 1B; the measured 4.8 min per set is that growth, not a new cost source.
+
 At one module a working day with three pushes in it, that is **~360 minutes a month
 against the 2,000 free** — under a fifth of the allowance, and the figure to re-measure
 rather than defend.
