@@ -8,7 +8,7 @@ planned. Anything that is deliberately **not** enabled is named as such in
 
 | Workflow | Triggers | Jobs | The claim it backs |
 | --- | --- | --- | --- |
-| `ci.yml` | push to any branch, PR into `main`, manual | `unit`, `integration` | The code compiles, the architecture rules hold, the schema builds, the wire contract is the documented one, and the Spring context boots on the properties file that Compose mounts. |
+| `ci.yml` | push to any branch, PR into `main`, manual | `unit`, `integration`, `web` | The code compiles, the architecture rules hold, the schema builds, the wire contract is the documented one, the Spring context boots on the properties file that Compose mounts, and the storefront lints, type-checks, passes its unit tests and builds the standalone output the web image copies. |
 | `database-migrations.yml` | push/PR **that touches a migration, `infra/ci/`, or the workflow itself** | `migrations` | The PostgreSQL server itself refuses what the design says it refuses, an edited migration is caught by checksum, and re-applying a full set changes nothing. |
 | `security.yml` | push to any branch, PR into `main`, manual | `dependencies`, `secrets` | The exact resolved dependency set carries no unapproved CRITICAL/HIGH advisory and no unapproved licence, and no credential exists anywhere in the history or the working tree. |
 | `.github/dependabot.yml` | Mondays 06:00 IST, GitHub-side | — | Version updates: grouped and throttled to five open pull requests — and **measured working**, not configured-and-hoped: a `Dependabot Updates` run went green two minutes after this file reached `main`, and PR #4 (`archunit-junit5` 1.4.1 → 1.5.1) arrived from `app/dependabot` with its own CI. Security alerts: **not available here**, `GET …/dependabot/alerts` answers 403 "Dependabot alerts are disabled for this repository". Dependency risk is carried by `security.yml`'s OSV scan, which needs no GitHub feature at all. |
@@ -16,25 +16,24 @@ planned. Anything that is deliberately **not** enabled is named as such in
 `pull-request.yml` is not a fifth file, and that is a decision rather than an
 omission: §1 requires the pipelines to exist *and* says to combine responsibilities
 where that improves maintainability. A pull request into `main` is validated by the
-same two jobs against the same commit as the branch push, so a separate file would
+same three jobs against the same commit as the branch push, so a separate file would
 be a copy. The `pull_request` event is what a reviewer sees as the required checks.
 
-There is no frontend job. `apps/web` does not exist yet, and a job that passes
-because it found nothing to check is the false green already closed once in
-Failsafe. The frontend job — lockfile install, ESLint, type-check, unit tests,
-production build — lands in the same pull request as the scaffold.
+The `web` job arrived in the pull request that created `apps/web`, not before it. A
+job that passes because it found nothing to check is the false green already closed
+once in Failsafe, so there was never a run of a frontend job with no frontend.
 
 ### Where each of §2's quality gates lives
 
 | Gate | Enforcement |
 | --- | --- |
 | Compilation failure | `unit` job: `mvn -B -ntp test` cannot start without a compile. |
-| Test failure | `unit` (100 tests) and `integration` (39 tests), both with `failIfNoTests=true`. |
-| Type-check failure | Java: the compiler *is* the type check. TypeScript: arrives with `apps/web`. |
+| Test failure | `unit` (100 tests) and `integration` (39 tests), both with `failIfNoTests=true`; `web` runs the Vitest suite, which fails on an empty run too. |
+| Type-check failure | Java: the compiler *is* the type check. TypeScript: `tsc --noEmit` in `web`, before the build, so the message names the file rather than a bundler stage. |
 | Migration failure | `integration` migrates a fresh database through the application's own Flyway; `database-migrations` re-applies the same set through the Flyway CLI and asserts the server-side constraints. |
 | Unapproved critical vulnerability | `security.yml → dependencies`: a CycloneDX SBOM of the resolved graph, scanned against OSV, gated by `infra/ci/osv-gate.sh` on CRITICAL and HIGH. |
 | Unapproved dependency licence | same job, `infra/ci/license-gate.sh` over the same SBOM: every licence a component *offers* is checked against the approved SPDX ids listed at the top of that script, and a component with no licence metadata fails. |
-| Production build failure | `mvn -B -ntp verify` in `integration` packages the jar that the api image copies. |
+| Production build failure | `mvn -B -ntp verify` in `integration` packages the jar that the api image copies; `next build` in `web` produces the `.next/standalone` tree the web image copies. |
 
 "Never bypass failing checks to complete a merge" is **not** machine-enforced on this
 repository, and pretending otherwise would be the most useful lie in this file.
