@@ -50,8 +50,13 @@ spring:
   jackson:
     property-naming-strategy: SNAKE_CASE
     default-property-inclusion: non_null
-    serialization:
-      write-dates-as-timestamps: false
+    # Jackson 3 moved this off SerializationFeature onto DateTimeFeature, so Boot 4 reads it
+    # from a different path. Left under `serialization:` it is not ignored — the enum constant
+    # does not exist, the binder throws, and the context never starts. Nothing in the unit
+    # suite sees this, because no unit test builds a context.
+    datatype:
+      datetime:
+        write-dates-as-timestamps: false
     deserialization:
       fail-on-unknown-properties: true
     time-zone: Asia/Kolkata
@@ -107,9 +112,13 @@ management:
       group:
         readiness:
           # Compose's api healthcheck reads /actuator/health/readiness, so this
-          # group is what gates the stack: migrations and the connection must
-          # both be up before anything routes traffic to the container.
-          include: readinessState,db,flyway
+          # group is what gates the stack. Boot 4.1.2 ships no Flyway health
+          # indicator (spring-boot-flyway has no health classes at all), and an
+          # unknown member of a group is silently ignored rather than reported —
+          # so listing one would claim a check that does not happen. Migration
+          # failure fails context startup instead, which takes the container
+          # down with it, and the db member is the live-connection half.
+          include: readinessState,db
   health:
     defaults:
       enabled: true
