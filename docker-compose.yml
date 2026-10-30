@@ -1,0 +1,19 @@
+# Saathi — Docker entry point for developers.
+#
+# The stack itself lives in infra/docker/docker-compose.yml. This file exists so
+# that `docker compose up -d --build` works from the repository root, which is
+# the promise the README makes. Relative paths inside the included file resolve
+# against infra/docker/, so the build contexts there stay correct.
+#
+#   docker compose up -d --build      start everything
+#   docker compose ps                 what is running and healthy
+#   docker compose logs -f api        one service's logs
+#   docker compose down               stop, keep every volume
+#
+# Production is a different file with different jobs:
+#   docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.prod.yml up -d
+
+name: saathi
+
+include:
+  - path: infra/docker/docker-compose.yml

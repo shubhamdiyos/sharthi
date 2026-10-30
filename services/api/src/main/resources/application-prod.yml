@@ -1,0 +1,38 @@
+# Saathi API — production profile. Loaded when SPRING_PROFILES_ACTIVE=prod,
+# which docker-compose.prod.yml sets and which a deployment must never inherit
+# by accident. Anything this file disables was disabled for a reason recorded in
+# System Design §2.2, §11.4 and §13.
+
+spring:
+  jpa:
+    # Never validate against a schema a reviewed migration step may not have
+    # reached yet, and never — under any setting — let Hibernate issue DDL
+    # against a production database.
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        generate_statistics: false
+
+  flyway:
+    # Migrations are a separate, reviewed, logged step in production
+    # (`docker compose --profile tools run --rm flyway migrate`). A pod that
+    # migrates on boot races its peers and rewrites a schema mid-incident.
+    enabled: false
+
+  sql:
+    init:
+      mode: never
+
+  # A stack trace in a response body is an architecture tour for an attacker.
+  mvc:
+    log-request-details: false
+
+logging:
+  level:
+    root: INFO
+    com.saathi: INFO
+    # Statement logging in production prints order values, addresses and
+    # payment identifiers into the log shipper.
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN

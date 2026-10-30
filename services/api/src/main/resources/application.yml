@@ -1,0 +1,127 @@
+# Saathi API — development/default configuration.
+#
+# Every value here is either a non-secret default or a placeholder expanded from
+# an environment variable. There is no default for the two signing keys: a
+# missing one fails SaathiProperties validation and the process refuses to boot.
+# Production overrides live in application-prod.yml and are set by the
+# deployment, never by editing this file (System Design §2.2, D12).
+
+spring:
+  application:
+    name: saathi-api
+
+  # Compose sets SPRING_DATASOURCE_URL to jdbc:postgresql://postgres:5432/….
+  # The fallbacks below are for Maven running on the host against the published
+  # port; POSTGRES_PASSWORD has no default on purpose.
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/${POSTGRES_DB:saathi}}
+    username: ${SPRING_DATASOURCE_USERNAME:${POSTGRES_USER:saathi}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${POSTGRES_PASSWORD:}}
+    hikari:
+      pool-name: saathi-pool
+      # A pilot runs on a 2-CPU box; a 50-connection default pool is a lie about
+      # capacity. Sized against §2.1's Postgres connection budget.
+      maximum-pool-size: ${SAATHI_DB_POOL_SIZE:10}
+      connection-timeout: 5000
+      validation-timeout: 3000
+
+  jpa:
+    # Flyway owns the schema. Hibernate only verifies that the entities and the
+    # migrations agree, and never issues DDL — not even in development.
+    hibernate:
+      ddl-auto: validate
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: Asia/Kolkata
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # An empty schema is migrated from V1; baseline-on-migrate would mask a
+    # pre-existing database nobody reviewed.
+    baseline-on-migrate: false
+    validate-on-migrate: true
+    clean-disabled: true
+
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: true
+    time-zone: Asia/Kolkata
+
+  mvc:
+    problemdetails:
+      enabled: false
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-exception: false
+  # A client-supplied oversized body is rejected at the container, before it
+  # reaches a parser or the database.
+  max-http-request-header-size: 8KB
+  tomcat:
+    max-swallow-size: 2MB
+
+saathi:
+  environment: ${SAATHI_ENVIRONMENT:dev}
+  session-secret: ${SAATHI_SESSION_SECRET:}
+  audit-ip-key: ${SAATHI_AUDIT_IP_KEY:}
+  otp-provider: ${SAATHI_OTP_PROVIDER:logging}
+  s3:
+    endpoint: ${SAATHI_S3_ENDPOINT:}
+    bucket: ${SAATHI_S3_BUCKET:}
+    access-key: ${SAATHI_S3_ACCESS_KEY:}
+    secret-key: ${SAATHI_S3_SECRET_KEY:}
+    region: ${SAATHI_S3_REGION:us-east-1}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # health + info only. The env and configprops endpoints would print the
+        # datasource password and every property this process knows about.
+        include: health,info
+  endpoint:
+    health:
+      show-details: always          # dev only; application-prod.yml sets never
+      show-components: always
+      probes:
+        enabled: true
+      group:
+        readiness:
+          # Compose's api healthcheck reads /actuator/health/readiness, so this
+          # group is what gates the stack: migrations and the connection must
+          # both be up before anything routes traffic to the container.
+          include: readinessState,db,flyway
+  health:
+    defaults:
+      enabled: true
+
+logging:
+  level:
+    com.saathi: INFO
+    org.hibernate.SQL: DEBUG
+    org.flywaydb: INFO
+  # Design §10.1: every response carries a request id. Every log line carries
+  # the same one, so an error code handed to a user can be followed into the
+  # server's own records.
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [saathi-api] [%X{request_id:-none}] %logger{36} - %msg%n"
+    date-format: "yyyy-MM-dd'T'HH:mm:ss.SSSXXX"
