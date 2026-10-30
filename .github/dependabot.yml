@@ -1,19 +1,20 @@
-# Dependabot version and security updates (§9's "enable GitHub security alerts").
+# Dependabot version updates (§9's dependency scanning).
 #
-# Free, and free specifically: GitHub lists "Dependabot security and version
-# updates" under the Free plan for private repositories, so this is the one
-# security capability that does the most work for the least money — it needs no
-# Actions minutes at all, because the scanning happens on GitHub's side and what
-# reaches the repository is a pull request.
+# What is known, measured rather than assumed. **Version updates** cost nothing in
+# Actions minutes and open a pull request at most on the schedule below; GitHub reads
+# this file only from the default branch, so it stays inert until it is merged.
+# **Dependabot alerts** do not work on this repository today: the API answers
+# 403 "Dependabot alerts are disabled for this repository", and the switch for that
+# lives behind GitHub Advanced Security on a private plan. That is why the
+# vulnerability gate is the osv-scanner job in security.yml, which reads a CycloneDX
+# SBOM built by Maven and needs no GitHub feature at all. The two are not redundant:
+# Dependabot tells you a newer version exists, OSV tells you whether the version you
+# resolved is unsafe.
 #
-# The cost it does have is indirect and worth naming: every pull request it opens
-# triggers ci.yml and security.yml, so an unbounded bot could spend the monthly
+# The cost version updates do have is indirect and worth naming: every pull request it
+# opens triggers ci.yml and security.yml, so an unbounded bot could spend the monthly
 # minutes on version bumps. `open-pull-requests-limit` is the throttle, grouped
 # updates are the reduction, and both are set deliberately low.
-#
-# The dependency graph this feeds is built by GitHub's own Maven extractor; the
-# osv-scanner job in security.yml is the check that does not depend on it, which is
-# why both exist rather than one.
 version: 2
 updates:
   - package-ecosystem: maven

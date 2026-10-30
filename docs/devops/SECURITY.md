@@ -16,7 +16,7 @@ who has to decide whether to trust a green run.
 | Architecture rules | ArchUnit 1.4.1 (`MoneyArchitectureTest`, `ModuleBoundaryTest`) | `ci.yml → unit` | A module reaching into another's internals, `double`/`float` money, an unparseable cursor, a boundary crossed before it is drawn. |
 | Configuration validity | Spring Boot's own binder, in `ApplicationContextIT` | `ci.yml → integration` | A property that cannot be bound, a bean that cannot start, a readiness group naming a health indicator that does not exist. |
 | Database-enforced guarantees | Flyway 12.4.0 CLI + `psql` on `postgres:16` | `database-migrations.yml` | A `UPDATE`/`DELETE`/`TRUNCATE` on `audit_event` that the server allowed, an unclosed `job_key` list, an idempotency key not scoped by tenant, a `business_day` that is not generated. |
-| Version updates | Dependabot (GitHub-side) | `.github/dependabot.yml` | Known-vulnerable dependency versions, without spending an Actions minute to look for them. |
+| Version updates | Dependabot (GitHub-side) | `.github/dependabot.yml` | A dependency falling behind. Configured, and inert until that file reaches `main`, because Dependabot reads its configuration only from the default branch. **Dependabot *alerts* do not work here** — observed, not assumed: the API answers 403 "Dependabot alerts are disabled for this repository". The toggle lives in Settings → Code security and analysis, which is a page this repository's token cannot read or write, and on a private GitHub Free repository the feature behind it is a paid one. Vulnerability detection is done by the OSV row above instead, which needs no GitHub feature. |
 
 ## Gates
 
@@ -146,8 +146,11 @@ declines to invent them:
    `setup-java-Linux-x64-maven-…` entry of tens of megabytes, not a growing pile per
    branch. Cache entries expire after 7 days of non-use, which is what keeps this
    self-cleaning.
-4. **Dependabot alerts** — open, and if any has waited more than a release cycle,
-   the reason belongs in this file, not in the alert.
+4. **Dependabot** — is the feature switched on in Settings → Code security and analysis
+   at all, and if so are any alerts older than a release cycle? Today the API says the
+   alerts are disabled, so this month's honest check is the other way round: confirm
+   that `security.yml`'s OSV gate is green, because it is the only dependency-risk check
+   that actually runs.
 5. **Secrets that exist at all** — a short list, each with an owner. Anything on the
    list nobody can name is a finding.
 

@@ -11,7 +11,7 @@ planned. Anything that is deliberately **not** enabled is named as such in
 | `ci.yml` | push to any branch, PR into `main`, manual | `unit`, `integration` | The code compiles, the architecture rules hold, the schema builds, the wire contract is the documented one, and the Spring context boots on the properties file that Compose mounts. |
 | `database-migrations.yml` | push/PR **that touches a migration, `infra/ci/`, or the workflow itself** | `migrations` | The PostgreSQL server itself refuses what the design says it refuses, an edited migration is caught by checksum, and re-applying a full set changes nothing. |
 | `security.yml` | push to any branch, PR into `main`, manual | `dependencies`, `secrets` | The exact resolved dependency set carries no unapproved CRITICAL/HIGH advisory and no unapproved licence, and no credential exists anywhere in the history or the working tree. |
-| `.github/dependabot.yml` | Mondays 06:00 IST, GitHub-side | — | Version and security updates arrive as pull requests, throttled to five open at a time. |
+| `.github/dependabot.yml` | Mondays 06:00 IST, **once it is on the default branch** | — | Version updates: configured, grouped, throttled to five open PRs, and unread by GitHub until this file lands on `main` — Dependabot only reads its configuration from the default branch, so the first possible schedule is Monday 2 November. Security alerts: **not available here**, measured as `GET …/dependabot/alerts` → 403 "Dependabot alerts are disabled for this repository". Dependency risk is carried by `security.yml`'s OSV scan, which needs no GitHub feature at all. |
 
 `pull-request.yml` is not a fifth file, and that is a decision rather than an
 omission: §1 requires the pipelines to exist *and* says to combine responsibilities
@@ -131,27 +131,32 @@ rate. GitHub Free gives a private repository **2,000 Linux minutes a month**,
 per repository. The default spending limit is $0, which means the allowance is a
 hard stop rather than a meter — an exceeded quota fails runs, it does not invoice.
 
-| | Estimated before the first run | Measured on the first run (30 Oct 2026, the push that added these workflows) |
+**A push to a branch that already has an open pull request costs one run, not two —
+plus the seconds the cancelled twin had already spent.** This needed measuring because
+the first version of this paragraph reasoned about it and got it backwards. PR #3 was
+opened ~10 minutes after its push, so the push runs had finished and the `pull_request`
+event paid for a whole second set (its jobs ran 70 s, 64 s, 56 s). The next commit,
+pushed while the pull request was open, started both events within 3 seconds of each
+other: the group cancelled the `push` runs, and the `pull_request` runs went green.
+Billed seconds for that commit: **302 s = 5.03 Linux minutes** — 192 s of completed
+work, 110 s of runs that were cancelled mid-job.
+
+| | Estimated before the first run | Measured |
 | --- | --- | --- |
 | `ci.yml`, one branch push | ~8 min (2 min unit + 6 min integration) | **110 s** — `unit` 38 s, `integration` 72 s, cold cache included |
-| `security.yml`, one branch push | ~5 min | **51 s** — `dependencies` 44 s, `secrets` 7 s |
+| `security.yml`, one branch push | ~5 min | **51 s** on its first run (`dependencies` 44 s, `secrets` 7 s) and **51 s** again after the licence gate was added (`dependencies` 39 s, `secrets` 12 s) — the new step is 26 ms of `jq` over a file the job already produced |
 | `database-migrations.yml`, one SQL-touching push | ~3 min | **50 s**, and it went red on run 1: the assertion expected the UTC day where the server produced the Indian one. The estimate of its duration was fine; the check was the point. |
+| One commit, all three workflows, both events | — | **302 s = 5.03 Linux min**, measured on the commit that added the licence gate: 192 s of completed `pull_request` work and 110 s spent by the `push` runs before the concurrency group cancelled them |
 | Maven cache | one shared entry, ~250 MB | **one entry, 67.7 MB** (`setup-java-Linux-x64-maven-c5110f…`), written by `unit` and reused by the other two Java jobs. The 10 GB per-repository cache allowance is not in contention. |
 | Artifacts per successful run | 0 bytes | **0** — confirmed through the API, not by reading the YAML: `GET /repos/shubhamdiyos/sharthi/actions/runs/41056239592/artifacts` returns `total_count: 0`. Uploads happen only on failure. |
 
-So the honest figure is **~3.5 Linux minutes per push that touches SQL**, ~2 minutes
-otherwise — roughly a quarter of what this file estimated before it had run once.
-At three pushes a working day that is ~230 minutes a month against the 2,000 free.
-
-**A pull request is a second full run, not a cancelled one, in the normal sequence.**
-The concurrency claim needed measuring rather than reasoning: PR #3's three push runs
-were already green when the pull request was opened ~10 minutes later, so nothing was
-in flight to cancel and the `pull_request` event paid for `ci`, `security` and
-`database-migrations` again (its own jobs ran 70 s, 64 s, 56 s). The group saves those
-minutes only when the pull request is opened *while* the push run is still going, which
-is not how this cycle works — the cycle waits for green before opening the PR. Budget
-one full run for the push and one for the pull request: **~7 minutes per module
-merge**, ~10 including a SQL-touching migration run.
+So the honest figure is **~3.2 Linux minutes per set of runs that finishes** — 110 s
+of `ci` + 51 s of `security` + 50 s of `database-migrations`, roughly a quarter of what
+this file estimated before it had run once — and a commit pushed while its pull request
+is open pays that once, not twice. Budget **~5 min for a module merge**, ~6-7 min if the
+first push happened before the pull request existed and so could not be cancelled.
+At one module a day with three commits in it, that is **~130-180 minutes a month
+against the 2,000 free.**
 
 Two numbers this file deliberately does not claim: total account storage and bandwidth.
 Neither is readable through the API available to the repository, both live on the
@@ -162,14 +167,14 @@ They belong in the founder's monthly check, listed in
 
 Controls that make those numbers stay small:
 
-* **One run per change, per event.** `concurrency` is keyed on the branch name for
-  both `push` and `pull_request`, so a second push to a branch that already has a run
-  in flight cancels the older one instead of validating two commits whose first is
-  already obsolete. Neither event was dropped — that would leave a commit unmonitored
-  — and the group does *not* merge the push and pull-request runs of the same commit
-  into one, because they start under different `run_id`s and the second only cancels
-  the first if the first has not finished. Measured above.
-  `cancel-in-progress` stops billing for an aborted run immediately.
+* **One run per commit, across both events.** `concurrency` is keyed on the branch name
+  for `push` and `pull_request` alike, so when a commit arrives on a branch that already
+  has an open pull request, the two runs that start within seconds of each other collapse
+  to one verdict — measured above, where the `push` set was cancelled and the
+  `pull_request` set carried the checks. Neither event was dropped, which would leave a
+  commit unmonitored. `cancel-in-progress` stops *further* billing for an aborted run;
+  the seconds it had already spent are still billed, and they were 110 of the 302 here.
+  Cancelling is a saving, not a refund.
 * **`timeout-minutes` on every job** (10–20), so a hung build cannot drift toward
   the 360-minute platform default.
 * **One Maven cache, shared.** `cache-dependency-path` is scoped to
@@ -190,13 +195,12 @@ Controls that make those numbers stay small:
   `gitleaks:v8.21.2`, `cyclonedx-maven-plugin:2.9.1`, `flyway/flyway:12.4.0-alpine`,
   `postgres:16`). A moving tag is a cache-buster and an unreproducible verdict.
 * **Dependabot's own throttle.** `open-pull-requests-limit: 5`, weekly, grouped by
-  ecosystem — because every PR it opens costs the minutes in the table above.
+  ecosystem — because every PR it opens (from the first Monday after it reaches `main`)
+  costs the minutes in the table above.
 
-At the current rate — one module a day, three pushes into it and one pull request,
-~13 Linux minutes per module across the three workflows — the monthly projection is
-~400 of the 2,000 free minutes with no discount for cancelled runs. Nothing in this
-pipeline can reach a paid feature without a human changing a setting, and the spending
-limit that would catch a mistake is $0.
+Nothing in this pipeline can reach a paid feature without a human changing a setting,
+and the backstop if a human is wrong is the account's $0 spending limit: an exceeded
+allowance fails runs, it does not invoice.
 
 ## Not enabled yet
 
@@ -211,7 +215,7 @@ the only one of these that a script cannot work around.
 | 5 — GHCR images | `release.yml`: build api + web once per `v*` tag, SHA-tag them, scan them with Trivy, attach the SBOM, then push. A retention rule to delete old versions. | GitHub Packages gives 500 MB free, **shared with the artifact allowance above**; container storage beyond that is billed per GB-month. Needs approval, and needs a retention policy decided before the first push. |
 | 6 — Staging | A cloud account, a managed Postgres, DNS, TLS. Deployment workflows with a `staging` environment. | Any real cloud resource is paid, and it is the reason the "cloud-portable" parts of the design (12-factor config, one image per service, no host paths, no local sockets) exist. **Nothing is provisioned without explicit approval.** |
 | 7 — Production | The same as staging plus a protected environment with a required-approver gate, and OIDC to the cloud provider instead of a stored access key. | Same. OIDC itself is free and is the design's preference precisely so that no long-lived cloud credential ever exists in this repository. |
-| 8 — More security tooling | CodeQL and the native gitleaks action, secret scanning push protection, and Dependabot security *updates* on branches other than the default. | CodeQL and gitleaks-action are GitHub Advanced Security features on a private repository: **paid per committer**. The free equivalents already run in `security.yml`, which is why they are not here. |
+| 8 — More security tooling | CodeQL and the native gitleaks action, secret scanning push protection, Dependabot *alerts* and security *updates*, and Dependabot on branches other than the default. | CodeQL, gitleaks-action and Dependabot alerts are GitHub Advanced Security features on a private repository: **paid per committer**. The free equivalents already run in `security.yml`, which is why they are not here — the OSV scan over the resolved SBOM is the dependency gate, and it does not need Dependabot alerts to exist. |
 | 9 — Backup/restore + rollback drills | `docs/devops/DISASTER-RECOVERY.md` and `ROLLBACK.md`, and a rehearsal that restores a `pg_dump` into a scratch container and proves the row counts. | Free: `pg_dump` inside the existing Compose stack, on the laptop. |
 
 `docs/devops/DEPLOYMENT.md`, `ROLLBACK.md` and `DISASTER-RECOVERY.md` arrive with
