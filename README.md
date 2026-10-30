@@ -27,7 +27,7 @@ apps/web/              Next.js storefront
 services/api/          Spring Boot API and the Flyway migrations in src/main/resources/db/migration
 infra/docker/          Dockerfiles and the real Compose topology
 infra/ci/              the gates CI runs as scripts (OSV severity, licences)
-docs/devops/           how the pipeline works and what it costs
+docs/devops/           the Compose topology (DOCKER.md), the pipeline (CI-CD.md) and its gates (SECURITY.md)
 docker-compose.yml     the root entry point: `docker compose up` works from here
 ```
 
