@@ -44,7 +44,40 @@ updates:
           - org.junit*
           - org.mockito*
           - org.assertj*
-  # npm joins this file in the same pull request as apps/web's package-lock.json:
-  # a directory entry whose lockfile does not exist is a config line that silently
-  # does nothing, and pretending to watch a dependency set that is not there is the
-  # false green this repository has already closed twice.
+  # npm is here because apps/web/package-lock.json is: lockfileVersion 3, 455
+  # resolved packages. Dependabot reads this file from the default branch only, so
+  # what "joins" it is the merge, not this pull request.
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Asia/Kolkata
+    # The same throttle as Maven, for the same reason: a React-major bump is a
+    # migration, not a merge button, and five open bot PRs is already more than
+    # two people can review in a week between shipping.
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # The framework moves together or not at all: next 16.x pins a react range,
+      # and a PR that bumps one without the other is a build failure waiting to be
+      # reviewed.
+      next-and-react:
+        patterns:
+          - next
+          - react
+          - react-dom
+      # The toolchain is one coherent upgrade — eslint-config-next moves with
+      # eslint and with the pinned typescript line.
+      toolchain:
+        patterns:
+          - eslint
+          - eslint-config-next
+          - typescript
+          - vitest
+          - '@types/*'
