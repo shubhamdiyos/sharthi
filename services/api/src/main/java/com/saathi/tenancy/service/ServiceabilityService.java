@@ -114,6 +114,23 @@ public class ServiceabilityService {
     }
 
     /**
+     * The ward a session is already bound to, refusing one this city has since switched off.
+     *
+     * <p>The session stores an id (that is how {@code PUT /me/ward} remembers the choice), but a
+     * cart must re-check it against the rows: a ward deactivated after the choice was made is not
+     * served, and a cart priced against it would quote a fee the city no longer charges.
+     */
+    @Transactional(readOnly = true)
+    public ServiceWard wardById(Tenant tenant, String wardId) {
+        ServiceWard ward = wardId == null ? null : wards.findById(wardId).orElse(null);
+        if (ward == null || !tenant.getId().equals(ward.getTenantId()) || !ward.isActive()) {
+            throw new ApiException(ErrorCode.OUTSIDE_SERVICE_AREA,
+                "We do not deliver to that area of the city yet.");
+        }
+        return ward;
+    }
+
+    /**
      * The rules in force for one ward, at most one per fulfilment mode.
      *
      * <p>"Newest {@code valid_from} that has started" and not "the row in the table": a ward has both

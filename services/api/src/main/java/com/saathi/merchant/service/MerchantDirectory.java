@@ -166,6 +166,17 @@ public class MerchantDirectory {
     }
 
     /**
+     * The shop a cart is bound to, with no visibility filter: the caller decides which refusal a
+     * hidden shop earns. {@code cart/} answers {@code MERCHANT_UNAVAILABLE} — the customer already
+     * has goods from this shop, so "we could not find it" would be a lie they cannot act on.
+     */
+    @Transactional(readOnly = true)
+    public Merchant shopInTenant(String tenantId, String merchantId) {
+        return merchants.findByIdAndTenantId(merchantId, tenantId)
+            .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "We could not find that shop."));
+    }
+
+    /**
      * The shops a search may return. {@code catalog/} asks with this instead of joining
      * {@code merchant}, which is the call that keeps §3's boundary intact.
      */

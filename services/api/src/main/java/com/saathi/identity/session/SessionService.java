@@ -1,5 +1,6 @@
 package com.saathi.identity.session;
 
+import com.saathi.identity.domain.Role;
 import com.saathi.identity.domain.UserAccount;
 import com.saathi.identity.domain.UserRoleGrant;
 import com.saathi.identity.domain.AccountState;
@@ -11,6 +12,7 @@ import com.saathi.identity.repository.UserSessionRepository;
 import com.saathi.identity.security.IdentityKeys;
 import com.saathi.shared.audit.RequestTags;
 import com.saathi.shared.id.Ulid;
+import com.saathi.shared.tenant.PrincipalKind;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -197,7 +199,37 @@ public class SessionService {
             session.setTenantScope(tenantId);
             session.setWardScope(wardId);
             sessions.save(session);
+            if (principal.kind() == PrincipalKind.CUSTOMER) {
+                grantCustomerRole(principal, tenantId);
+            }
         });
+    }
+
+    /**
+     * A customer's permissions come from the same {@code user_role_grant} rows as everyone else's
+     * (§11.3), and a CUSTOMER grant needs a tenant — V2's trigger accepts a tenantless grant only
+     * for a platform role. Registration happens before a city is chosen, so the grant is written at
+     * the first ward binding, which is the moment the customer's city becomes a fact (§10.1). The
+     * second city a customer shops in gets its own grant, exactly as the seed's two shoppers do.
+     */
+    private void grantCustomerRole(AuthenticatedPrincipal principal, String tenantId) {
+        Role customerRole = roles.findByKey("CUSTOMER").orElseThrow(
+            () -> new IllegalStateException("the CUSTOMER role is missing from the reference data"));
+        boolean held = grants.findByUserAccountIdAndTenantIdAndRevokedAtIsNull(
+                principal.accountId(), tenantId).stream()
+            .anyMatch(grant -> grant.getRoleId().equals(customerRole.getId()));
+        if (held) {
+            return;
+        }
+        grants.save(UserRoleGrant.builder()
+            .id(Ulid.next(clock))
+            .userAccountId(principal.accountId())
+            .roleId(customerRole.getId())
+            .tenantId(tenantId)
+            .grantedBy(principal.accountId())
+            .grantedAt(clock.instant())
+            .reason("Registered on the storefront")
+            .build());
     }
 
     private String credential(String sessionId) {

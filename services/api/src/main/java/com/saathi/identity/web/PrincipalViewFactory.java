@@ -28,10 +28,11 @@ import org.springframework.transaction.annotation.Transactional;
  * that is shown a scope it can no longer use will produce a {@code TENANT_SCOPE_VIOLATION} it cannot
  * explain, which is §10.4's promise broken in the one place it is load-bearing.
  *
- * <p>The session's own tenant appears when no grant names it. That is the customer case: a storefront
- * principal holds no grants at all, and its city is the ward it picked (§10.1). Dropping it would
- * make {@code GET /me} claim a customer can act in no city while the very next cart request proves
- * it can.
+ * <p>The session's own binding narrows the grant set for the city the caller is acting in. That is
+ * the customer case: the CUSTOMER grant names only the tenant, while the ward is the one the session
+ * bound (§10.1). Letting the grant's tenant-only scope stand would drop the ward from the very
+ * response that just answered the binding, so for the session's tenant the session's narrower scope
+ * replaces the grant's.
  */
 @Component
 @RequiredArgsConstructor
@@ -46,16 +47,22 @@ public class PrincipalViewFactory {
         List<UserRoleGrant> live = grants.findByUserAccountIdAndRevokedAtIsNull(caller.accountId());
         Map<String, String> codes = codesOf(live, caller.tenantId());
 
+        boolean sessionNarrower = caller.tenantId() != null
+            && (caller.wardId() != null || caller.merchantId() != null);
+
         // A LinkedHashSet rather than a list because two grants of one role in one city — operator
         // and support, say — describe one place the caller can act, and a client that iterates
         // scopes to build a city picker would render the same city twice.
         Set<PrincipalView.Scope> scopes = new LinkedHashSet<>();
         for (UserRoleGrant grant : live) {
+            if (sessionNarrower && caller.tenantId().equals(grant.getTenantId())) {
+                continue;
+            }
             scopes.add(scopeOf(grant.getTenantId(), codes, grant.getMerchantId(), grant.getWardId()));
         }
         boolean sessionTenantGranted = scopes.stream()
             .anyMatch(s -> Objects.equals(s.tenantId(), caller.tenantId()));
-        if (caller.tenantId() != null && !sessionTenantGranted) {
+        if (caller.tenantId() != null && (sessionNarrower || !sessionTenantGranted)) {
             scopes.add(scopeOf(caller.tenantId(), codes, caller.merchantId(), caller.wardId()));
         }
 
