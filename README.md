@@ -110,7 +110,8 @@ cd services/api && SAATHI_IT_RECREATE=true mvn -B -ntp verify
 
 The integration suite creates its own database (`SAATHI_IT_DB`, default
 `saathi_it`) and migrates it from scratch; it never touches the Compose database.
-The same suites run in GitHub Actions on every push — see
+The same suites run in GitHub Actions on every pull request and on every merge into
+`main` — see
 [CI-CD.md](docs/devops/CI-CD.md) for which workflow proves what, and
 [SECURITY.md](docs/devops/SECURITY.md) for the gates and the monthly checks that
 are not automated.

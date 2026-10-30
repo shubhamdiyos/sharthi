@@ -1,12 +1,12 @@
 # Continuous integration.
 #
-# One workflow covers both triggers the mandate names — every feature branch push
-# and every pull request into main — because the validation is the same in both
-# cases and a second file would only duplicate it (§1's "avoid redundant
-# workflows"). It is also the workflow that branch protection is meant to require,
-# and the only one that does: the `unit`, `integration` and `web` checks below exist
-# on every commit, which is what a required check has to do to avoid leaving a merge
-# stuck waiting for a check that never runs.
+# One workflow covers both events the mandate names — a pull request into main and
+# the merge into main — because the validation is the same in both cases and a second
+# file would only duplicate it (§1's "avoid redundant workflows"). It is also the
+# workflow that branch protection is meant to require, and the only one that can:
+# the `unit`, `integration` and `web` checks below exist on every commit that is
+# offered for merge and on every commit that lands, which is what a required check
+# has to do to avoid leaving a merge stuck waiting for a check that never runs.
 #
 # What each job proves, and why it is split the way it is:
 #   unit          `mvn test`. No daemon, no database, no network. It is the fast
@@ -34,13 +34,14 @@
 #   of this file, with a cold Maven cache: 38 s for `unit`, 72 s for `integration`.
 #   The numbers in docs/devops/CI-CD.md come from the API's run durations, not from
 #   this comment, and the pre-first-run estimate is left there rather than rewritten.
-# * `concurrency` keyed on the branch name, with cancel-in-progress, so a push and
-#   the pull request opened from it — the same commit validated twice — cost one
-#   run. `cancel-in-progress` means an aborted run stops billing at once.
-#   The push and the pull_request event still both *trigger* the workflow; the
-#   group makes the second one queue and cancel the first rather than run twice.
-#   That is the cheapest safe combination: no event is unmonitored (which is what
-#   dropping one trigger would do) and no commit is validated twice.
+# * `concurrency` keyed on the branch name, with cancel-in-progress, so two pushes
+#   to one branch cost one run and an aborted run stops billing immediately.
+# * `push` is restricted to `main`. A branch commit is validated by the
+#   `pull_request` run of the PR opened from it, which is the workflow's own rule:
+#   one branch per module, and the branch is not finished until it has a PR. The
+#   residual gap is a branch pushed and left without a pull request — that commit
+#   runs nothing. It is a gap on purpose: the alternative was paying for every
+#   commit twice, and an unmerged branch is not an artefact anyone deploys.
 # * `timeout-minutes` on every job, so a hung build cannot quietly consume the
 #   hour GitHub would otherwise allow it.
 # * One Maven cache *key*, shared with security.yml, so a job restores the Spring Boot
@@ -63,8 +64,14 @@
 name: ci
 
 on:
+  # `main` only. A feature branch is validated by its pull_request run; letting
+  # the branch push trigger a second identical set of jobs meant every module paid
+  # for both — measured on 7bfd75e as 143 s of completed work plus 155 s billed by
+  # the five push jobs the concurrency group then cancelled. `main` still runs
+  # post-merge because the merge commit, not the branch, is the artefact that
+  # ships.
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
     branches: [main]
   # Lets a validation be re-run on a commit that is already pushed, without

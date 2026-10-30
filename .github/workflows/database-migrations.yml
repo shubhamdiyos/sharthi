@@ -27,7 +27,8 @@
 #
 # Why this is a separate workflow instead of a third ci.yml job, and why it is
 # path-filtered:
-#   ci.yml's integration job already migrates a fresh database on every push —
+#   ci.yml's integration job already migrates a fresh database on every pull
+#   request —
 #   ItDatabase runs Flyway against saathi_it — so "the migrations apply" is never
 #   unmonitored. What this file adds is the server-side constraint assertions and
 #   the tamper proof, and those only change when a migration file does. Running
@@ -39,7 +40,7 @@ name: database-migrations
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
     paths:
       - 'services/api/src/main/resources/db/migration/**'
       - 'infra/ci/**'
@@ -55,8 +56,10 @@ on:
 permissions:
   contents: read
 
-# Same branch-keyed de-duplication as ci.yml: a push and the pull request opened
-# from that push describe one commit and must cost one run, not two.
+# Same branch-keyed de-duplication as ci.yml: two pushes to one branch describe the
+# work-in-progress and must cost one run. Branch pushes no longer trigger this
+# workflow at all except on main — the pull request run of the branch is the check
+# (see the reason recorded in ci.yml).
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true

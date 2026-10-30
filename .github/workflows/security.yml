@@ -32,8 +32,11 @@
 name: security
 
 on:
+  # `main` only, for the reason recorded in ci.yml: the pull request opened from a
+  # branch validates the same commit, and paying for both meant the cancelled twin
+  # still billed its seconds.
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:

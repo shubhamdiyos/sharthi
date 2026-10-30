@@ -8,9 +8,9 @@ planned. Anything that is deliberately **not** enabled is named as such in
 
 | Workflow | Triggers | Jobs | The claim it backs |
 | --- | --- | --- | --- |
-| `ci.yml` | push to any branch, PR into `main`, manual | `unit`, `integration`, `web` | The code compiles, the architecture rules hold, the schema builds, the wire contract is the documented one, the Spring context boots on the properties file that Compose mounts, and the storefront lints, type-checks, passes its unit tests and builds the standalone output the web image copies. |
-| `database-migrations.yml` | push/PR **that touches a migration, `infra/ci/`, or the workflow itself** | `migrations` | The PostgreSQL server itself refuses what the design says it refuses, an edited migration is caught by checksum, and re-applying a full set changes nothing. |
-| `security.yml` | push to any branch, PR into `main`, manual | `dependencies`, `secrets` | The exact resolved dependency set carries no unapproved CRITICAL/HIGH advisory and no unapproved licence, and no credential exists anywhere in the history or the working tree. |
+| `ci.yml` | push to `main`, PR into `main`, manual | `unit`, `integration`, `web` | The code compiles, the architecture rules hold, the schema builds, the wire contract is the documented one, the Spring context boots on the properties file that Compose mounts, and the storefront lints, type-checks, passes its unit tests and builds the standalone output the web image copies. |
+| `database-migrations.yml` | push to `main` / PR into `main`, **only when it touches a migration, `infra/ci/`, or the workflow itself** | `migrations` | The PostgreSQL server itself refuses what the design says it refuses, an edited migration is caught by checksum, and re-applying a full set changes nothing. |
+| `security.yml` | push to `main`, PR into `main`, manual | `dependencies`, `secrets` | The exact resolved dependency set carries no unapproved CRITICAL/HIGH advisory and no unapproved licence, and no credential exists anywhere in the history or the working tree. |
 | `.github/dependabot.yml` | Mondays 06:00 IST, GitHub-side | — | Version updates: grouped and throttled to five open pull requests — and **measured working**, not configured-and-hoped: a `Dependabot Updates` run went green two minutes after this file reached `main`, and PR #4 (`archunit-junit5` 1.4.1 → 1.5.1) arrived from `app/dependabot` with its own CI. Security alerts: **not available here**, `GET …/dependabot/alerts` answers 403 "Dependabot alerts are disabled for this repository". Dependency risk is carried by `security.yml`'s OSV scan, which needs no GitHub feature at all. |
 
 `pull-request.yml` is not a fifth file, and that is a decision rather than an
@@ -130,34 +130,41 @@ rate. GitHub Free gives a private repository **2,000 Linux minutes a month**,
 per repository. The default spending limit is $0, which means the allowance is a
 hard stop rather than a meter — an exceeded quota fails runs, it does not invoice.
 
-**A push to a branch that already has an open pull request costs one run, not two —
-plus the seconds the cancelled twin had already spent.** This needed measuring because
-the first version of this paragraph reasoned about it and got it backwards. PR #3 was
-opened ~10 minutes after its push, so the push runs had finished and the `pull_request`
-event paid for a whole second set (its jobs ran 70 s, 64 s, 56 s). The next commit,
-pushed while the pull request was open, started both events within 3 seconds of each
-other: the group cancelled the `push` runs, and the `pull_request` runs went green.
-Billed seconds for that commit: **302 s = 5.03 Linux minutes** — 192 s of completed
-work, 110 s of runs that were cancelled mid-job.
+**A branch commit is validated once, because only `main` triggers on push.** The first
+version of this paragraph reasoned about it and got it backwards, and the correction was
+measured rather than argued: PR #3 was opened ~10 minutes after its push, so the push runs
+had finished and the `pull_request` event paid for a whole second set (its jobs ran 70 s,
+64 s, 56 s). The next commit, pushed while the pull request was open, started both events
+within 3 seconds of each other; the concurrency group cancelled the `push` runs and the
+`pull_request` runs went green, and the cancelled twins were still billed — **302 s = 5.03
+Linux minutes** for that commit, 192 s of completed work and 110 s of runs stopped
+mid-job. `cancel-in-progress` stops *further* billing; it does not refund what was already
+spent. So `push: branches: ['**']` was wrong on cost, not on safety: the pull request of a
+branch is the check for that branch, and a branch with no pull request has no artefact
+anyone deploys. Restricting the push trigger to `main` removes the duplicate set and the
+race that produced the extra cache entries below.
 
 | | Estimated before the first run | Measured |
 | --- | --- | --- |
 | `ci.yml`, one branch push | ~8 min (2 min unit + 6 min integration) | **110 s** with two jobs (`unit` 38 s, `integration` 72 s, cold cache), then **104 s** with the `web` job added on `7bfd75e`: `unit` 19 s, `integration` 56 s (warm Maven), `web` 29 s (cold npm cache, install 10 s) |
 | `security.yml`, one branch push | ~5 min | **51 s** on its first run (`dependencies` 44 s, `secrets` 7 s) and **51 s** again after the licence gate was added (`dependencies` 39 s, `secrets` 12 s) — the new step is 26 ms of `jq` over a file the job already produced. Measured again on `7bfd75e`: **39 s** (`dependencies` 29 s, `secrets` 10 s) |
 | `database-migrations.yml`, one SQL-touching push | ~3 min | **50 s**, and it went red on run 1: the assertion expected the UTC day where the server produced the Indian one. The estimate of its duration was fine; the check was the point. |
-| One commit, `ci` + `security`, both events | — | **298 s = 4.97 Linux min** on `7bfd75e`: 143 s of completed `pull_request` work (104 + 39) and **155 s billed by the five `push` jobs that the concurrency group cancelled** (29 + 23 + 64 + 31 + 8). The earlier three-workflow commit measured 302 s; five jobs racing makes the cancelled half more expensive than four did, which is why the commit total did not fall when the completed half did. |
+| One commit, `ci` + `security`, both events | — | **298 s = 4.97 Linux min** on `7bfd75e`: 143 s of completed `pull_request` work (104 + 39) and **155 s billed by the five `push` jobs that the concurrency group cancelled** (29 + 23 + 64 + 31 + 8). The earlier three-workflow commit measured 302 s; five jobs racing makes the cancelled half more expensive than four did, which is why the commit total did not fall when the completed half did. **This row is the behaviour before `push` was narrowed to `main`, and it is kept because it is what the fix was priced against** — the duplicate set it describes no longer starts. Its replacement has not been measured yet; the first run under the narrowed triggers is the commit that narrows them, and the figure belongs here once a normal module merge has produced it. |
 | Maven cache | one shared entry, ~250 MB | **five entries, 323 MB** at the end of 30 October — `GET …/actions/caches` lists them under two keys (`…6d8edb48…`, `…c5110fbd…`). The intent (one shared entry restored by every Java job) is what the logs say happens — "Cache hit occurred on the primary key, not saving cache" — but the store shows several, so the dedupe claim is corrected to the measurement. |
-| npm cache | one entry, ~120 MB | **three entries, 345 MB** at the end of 30 October, all under the key for `apps/web/package-lock.json`. Each commit whose `push` and `pull_request` web jobs start together on an uncached key can add one: both finish `npm ci` before the concurrency group cancels the `push` run, and both save. `node_modules` for this app is 121 MB compressed, so the npm key is the fastest-growing part of the store — one entry per racing commit, until entries age out at 7 days. Measured total for everything: **8 entries, 673 MB** (6.6 % of the separate 10 GB cache allowance). |
+| npm cache | one entry, ~120 MB | **three entries, 345 MB** at the end of 30 October, all under the key for `apps/web/package-lock.json`. Each commit whose `push` and `pull_request` web jobs start together on an uncached key can add one: both finish `npm ci` before the concurrency group cancels the `push` run, and both save. `node_modules` for this app is 121 MB compressed, so the npm key is the fastest-growing part of the store — one entry per racing commit, until entries age out at 7 days. Narrowing `push` to `main`
+closes that source: one `web` job per commit means one save per key. Measured total for everything: **8 entries, 673 MB** (6.6 % of the separate 10 GB cache allowance). |
 | Artifacts per successful run | 0 bytes | **0** — confirmed through the API, not by reading the YAML: `GET /repos/shubhamdiyos/sharthi/actions/runs/41056239592/artifacts` returns `total_count: 0`. Uploads happen only on failure. |
 
 So the honest figure is **~3.2 Linux minutes per set of runs that finishes** — 104 s
 of `ci` + 39 s of `security` + 50 s of `database-migrations`, roughly a quarter of what
-this file estimated before it had run once — and a commit pushed while its pull request
-is open pays more than that, because the cancelled twins are billed for the seconds they
-spent: **5.0 minutes measured** on the commit that added the `web` job. Budget **~5 min
-for a module merge**, and note that the cancelled half grows with every job added, so the
-saving from concurrency is real but smaller than the completed work suggests.
-At one module a day with three commits in it, that is **~130-180 minutes a month
+this file estimated before it had run once. A module merge is **two** sets, and saying
+only one would be the kind of arithmetic that gets budgets wrong: the `pull_request` set
+that gates the merge, and the `main` set that validates the merge commit, because the
+merge commit is the artefact that ships. Budget **~6.5 min per module**, against the
+**5.0 min measured on `7bfd75e`** when a commit paid for both events on the same branch
+plus the cancelled twins. The saving is not the interesting part; the interesting part is
+that the expensive half of the old number bought nothing.
+At one module a day with three commits in it, that is **~130-190 minutes a month
 against the 2,000 free.**
 
 For calibration, the day these workflows were built is measurable rather than projected:
@@ -174,14 +181,16 @@ They belong in the founder's monthly check, listed in
 
 Controls that make those numbers stay small:
 
-* **One run per commit, across both events.** `concurrency` is keyed on the branch name
-  for `push` and `pull_request` alike, so when a commit arrives on a branch that already
-  has an open pull request, the two runs that start within seconds of each other collapse
-  to one verdict — measured above, where the `push` set was cancelled and the
-  `pull_request` set carried the checks. Neither event was dropped, which would leave a
-  commit unmonitored. `cancel-in-progress` stops *further* billing for an aborted run;
-  the seconds it had already spent are still billed, and they were 110 of the 302 here.
-  Cancelling is a saving, not a refund.
+* **One trigger set per commit.** `push` fires on `main` only; a branch is validated by
+  the `pull_request` run of the PR opened from it, which is the workflow's own rule — one
+  branch per module, and the branch is not finished until it has a pull request. Two
+  events on one branch commit used to start within seconds and the concurrency group
+  picked the winner, but the loser had already billed: 110 of 302 seconds, then 155 of
+  298. `cancel-in-progress` stops *further* billing for an aborted run; cancelling is a
+  saving, not a refund, so the fix was to stop starting the run. The gap this accepts is a
+  branch pushed with no pull request — nothing runs for it, and nothing ships from it.
+  `concurrency` stays keyed on the branch name, which now does the other job: two pushes
+  to one branch in quick succession collapse to the newest commit.
 * **`timeout-minutes` on every job** (10–20), so a hung build cannot drift toward
   the 360-minute platform default.
 * **One Maven cache key, shared.** `cache-dependency-path` is scoped to
