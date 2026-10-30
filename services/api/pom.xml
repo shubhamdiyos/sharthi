@@ -27,7 +27,7 @@
          1.85 is the first release outside the fixed range of every OSV advisory still open on
          1.82 (GHSA-9pwp-9qqc-pr26 and GHSA-qp49-qgx5-5m26 need 1.85; the other three are fixed
          by 1.84), so it is the lowest version that clears security.yml rather than the newest. -->
-    <bouncycastle.version>1.85</bouncycastle.version>
+    <bouncycastle.version>1.86</bouncycastle.version>
   </properties>
 
   <dependencies>
