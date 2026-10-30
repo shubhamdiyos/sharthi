@@ -123,6 +123,8 @@
           <!-- Unit + architecture tests: no daemon, no database, no network.
                `mvn test` must be runnable on a laptop with nothing installed. -->
           <excludedGroups>integration</excludedGroups>
+          <!-- A suite that silently matches nothing is a green build over no code. -->
+          <failIfNoTests>true</failIfNoTests>
         </configuration>
       </plugin>
       <plugin>
@@ -138,6 +140,10 @@
         </executions>
         <configuration>
           <groups>integration</groups>
+          <!-- Failsafe prints "No tests to run" and exits 0. Against a foundation whose whole
+               promise is that the schema and the wire contract were verified, that is a lie,
+               so an empty integration suite fails the build on purpose. -->
+          <failIfNoTests>true</failIfNoTests>
         </configuration>
       </plugin>
     </plugins>

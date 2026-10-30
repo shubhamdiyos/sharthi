@@ -1,0 +1,66 @@
+# Saathi — integration-test configuration (`*IT`, run by `mvn verify`).
+#
+# These tests need the real database, so they run against the Compose stack:
+#
+#   cp .env.example .env
+#   docker compose up -d postgres
+#   mvn verify
+#
+# There is no committed password here. POSTGRES_* are read from the untracked root
+# .env, imported below as a properties file; on CI the same keys arrive as real
+# environment variables and the optional import simply finds nothing.
+#
+# `mvn test` never reads this file: Surefire excludes the `integration` group and no
+# unit test starts a context, so the unit suite stays runnable with nothing installed.
+
+spring:
+  config:
+    # The dotted hint is required: the brackets carry a file *extension*, and `.env` has none,
+    # so without `[.properties]` the import is parsed as an unknown format and resolves to
+    # nothing at all — which is what `optional:` then quietly allows.
+    import: "optional:file:${SAATHI_DOTENV:../../.env}[.properties]"
+
+  datasource:
+    # The ITs never touch the development database. ItDatabase creates this one, and
+    # only this one, immediately before Flyway runs against it.
+    url: jdbc:postgresql://${saathi-it.host}:${saathi-it.port}/${saathi-it.database}
+    username: ${saathi-it.username}
+    password: ${saathi-it.password}
+    hikari:
+      pool-name: saathi-it-pool
+      maximum-pool-size: 4
+
+  jpa:
+    hibernate:
+      # No entities exist yet, and the schema is Flyway's, not Hibernate's.
+      ddl-auto: none
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    validate-on-migrate: true
+    clean-disabled: true
+
+saathi:
+  environment: dev
+  session-secret: ${SAATHI_SESSION_SECRET:}
+  audit-ip-key: ${SAATHI_AUDIT_IP_KEY:}
+  otp-provider: logging
+
+saathi-it:
+  host: ${SAATHI_IT_HOST:localhost}
+  port: ${POSTGRES_PORT:5432}
+  database: ${SAATHI_IT_DB:saathi_it}
+  maintenance-database: ${SAATHI_IT_MAINTENANCE_DB:postgres}
+  username: ${POSTGRES_USER:saathi}
+  password: ${POSTGRES_PASSWORD:}
+  # true = drop and recreate the IT database on every run, so V1 is proven against
+  # an empty schema every time. Never applies to any other database.
+  recreate: ${SAATHI_IT_RECREATE:false}
+
+logging:
+  level:
+    com.saathi: INFO
+    org.hibernate.SQL: WARN
+    org.flywaydb: WARN
