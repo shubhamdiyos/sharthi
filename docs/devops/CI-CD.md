@@ -8,7 +8,7 @@ planned. Anything that is deliberately **not** enabled is named as such in
 
 | Workflow | Triggers | Jobs | The claim it backs |
 | --- | --- | --- | --- |
-| `ci.yml` | push to any branch, PR into `main`, manual | `unit`, `integration` | The code compiles, the architecture rules hold, the schema builds, the wire contract is the documented one, and the Spring context boots on the properties file that Compose mounts. |
+| `ci.yml` | push to any branch, PR into `main`, manual | `unit`, `integration`, `web` | The code compiles, the architecture rules hold, the schema builds, the wire contract is the documented one, the Spring context boots on the properties file that Compose mounts, and the storefront lints, type-checks, passes its unit tests and builds the standalone output the web image copies. |
 | `database-migrations.yml` | push/PR **that touches a migration, `infra/ci/`, or the workflow itself** | `migrations` | The PostgreSQL server itself refuses what the design says it refuses, an edited migration is caught by checksum, and re-applying a full set changes nothing. |
 | `security.yml` | push to any branch, PR into `main`, manual | `dependencies`, `secrets` | The exact resolved dependency set carries no unapproved CRITICAL/HIGH advisory and no unapproved licence, and no credential exists anywhere in the history or the working tree. |
 | `.github/dependabot.yml` | Mondays 06:00 IST, GitHub-side | — | Version updates: grouped and throttled to five open pull requests — and **measured working**, not configured-and-hoped: a `Dependabot Updates` run went green two minutes after this file reached `main`, and PR #4 (`archunit-junit5` 1.4.1 → 1.5.1) arrived from `app/dependabot` with its own CI. Security alerts: **not available here**, `GET …/dependabot/alerts` answers 403 "Dependabot alerts are disabled for this repository". Dependency risk is carried by `security.yml`'s OSV scan, which needs no GitHub feature at all. |
@@ -16,25 +16,24 @@ planned. Anything that is deliberately **not** enabled is named as such in
 `pull-request.yml` is not a fifth file, and that is a decision rather than an
 omission: §1 requires the pipelines to exist *and* says to combine responsibilities
 where that improves maintainability. A pull request into `main` is validated by the
-same two jobs against the same commit as the branch push, so a separate file would
+same three jobs against the same commit as the branch push, so a separate file would
 be a copy. The `pull_request` event is what a reviewer sees as the required checks.
 
-There is no frontend job. `apps/web` does not exist yet, and a job that passes
-because it found nothing to check is the false green already closed once in
-Failsafe. The frontend job — lockfile install, ESLint, type-check, unit tests,
-production build — lands in the same pull request as the scaffold.
+The `web` job arrived in the pull request that created `apps/web`, not before it. A
+job that passes because it found nothing to check is the false green already closed
+once in Failsafe, so there was never a run of a frontend job with no frontend.
 
 ### Where each of §2's quality gates lives
 
 | Gate | Enforcement |
 | --- | --- |
 | Compilation failure | `unit` job: `mvn -B -ntp test` cannot start without a compile. |
-| Test failure | `unit` (100 tests) and `integration` (39 tests), both with `failIfNoTests=true`. |
-| Type-check failure | Java: the compiler *is* the type check. TypeScript: arrives with `apps/web`. |
+| Test failure | `unit` (100 tests) and `integration` (39 tests), both with `failIfNoTests=true`; `web` runs the Vitest suite, which fails on an empty run too. |
+| Type-check failure | Java: the compiler *is* the type check. TypeScript: `tsc --noEmit` in `web`, before the build, so the message names the file rather than a bundler stage. |
 | Migration failure | `integration` migrates a fresh database through the application's own Flyway; `database-migrations` re-applies the same set through the Flyway CLI and asserts the server-side constraints. |
 | Unapproved critical vulnerability | `security.yml → dependencies`: a CycloneDX SBOM of the resolved graph, scanned against OSV, gated by `infra/ci/osv-gate.sh` on CRITICAL and HIGH. |
 | Unapproved dependency licence | same job, `infra/ci/license-gate.sh` over the same SBOM: every licence a component *offers* is checked against the approved SPDX ids listed at the top of that script, and a component with no licence metadata fails. |
-| Production build failure | `mvn -B -ntp verify` in `integration` packages the jar that the api image copies. |
+| Production build failure | `mvn -B -ntp verify` in `integration` packages the jar that the api image copies; `next build` in `web` produces the `.next/standalone` tree the web image copies. |
 
 "Never bypass failing checks to complete a merge" is **not** machine-enforced on this
 repository, and pretending otherwise would be the most useful lie in this file.
@@ -143,18 +142,21 @@ work, 110 s of runs that were cancelled mid-job.
 
 | | Estimated before the first run | Measured |
 | --- | --- | --- |
-| `ci.yml`, one branch push | ~8 min (2 min unit + 6 min integration) | **110 s** — `unit` 38 s, `integration` 72 s, cold cache included |
-| `security.yml`, one branch push | ~5 min | **51 s** on its first run (`dependencies` 44 s, `secrets` 7 s) and **51 s** again after the licence gate was added (`dependencies` 39 s, `secrets` 12 s) — the new step is 26 ms of `jq` over a file the job already produced |
+| `ci.yml`, one branch push | ~8 min (2 min unit + 6 min integration) | **110 s** with two jobs (`unit` 38 s, `integration` 72 s, cold cache), then **104 s** with the `web` job added on `7bfd75e`: `unit` 19 s, `integration` 56 s (warm Maven), `web` 29 s (cold npm cache, install 10 s) |
+| `security.yml`, one branch push | ~5 min | **51 s** on its first run (`dependencies` 44 s, `secrets` 7 s) and **51 s** again after the licence gate was added (`dependencies` 39 s, `secrets` 12 s) — the new step is 26 ms of `jq` over a file the job already produced. Measured again on `7bfd75e`: **39 s** (`dependencies` 29 s, `secrets` 10 s) |
 | `database-migrations.yml`, one SQL-touching push | ~3 min | **50 s**, and it went red on run 1: the assertion expected the UTC day where the server produced the Indian one. The estimate of its duration was fine; the check was the point. |
-| One commit, all three workflows, both events | — | **302 s = 5.03 Linux min**, measured on the commit that added the licence gate: 192 s of completed `pull_request` work and 110 s spent by the `push` runs before the concurrency group cancelled them |
-| Maven cache | one shared entry, ~250 MB | **four entries, 261 MB total** — `GET …/actions/caches` lists one 67.6 MB entry under key `…6d8edb48…` and three 64.6 MB entries under `…c5110fbd…`, written between 12:34 and 13:10 UTC on 30 October. The intent (one shared entry restored by every Java job) is what the logs say happens — "Cache hit occurred on the primary key, not saving cache" — but the store shows saves anyway, so the dedupe claim is corrected to the measurement. It is still 2.6 % of the separate 10 GB cache allowance, and entries expire after 7 days of non-use, so the pile is bounded without a cleanup job. |
+| One commit, `ci` + `security`, both events | — | **298 s = 4.97 Linux min** on `7bfd75e`: 143 s of completed `pull_request` work (104 + 39) and **155 s billed by the five `push` jobs that the concurrency group cancelled** (29 + 23 + 64 + 31 + 8). The earlier three-workflow commit measured 302 s; five jobs racing makes the cancelled half more expensive than four did, which is why the commit total did not fall when the completed half did. |
+| Maven cache | one shared entry, ~250 MB | **five entries, 341 MB total** — `GET …/actions/caches` lists them under two keys (`…6d8edb48…`, `…c5110fbd…`), written between 12:34 and 13:47 UTC on 30 October. The intent (one shared entry restored by every Java job) is what the logs say happens — "Cache hit occurred on the primary key, not saving cache" — but the store shows saves anyway, so the dedupe claim is corrected to the measurement. |
+| npm cache | one entry, ~120 MB | **two entries, 243 MB** under the same key for `apps/web/package-lock.json`, because the `push` and `pull_request` web jobs started together on a cold cache and both finished their `npm ci` before the group cancelled the `push` run. `node_modules` for this app is 121 MB compressed; the second entry expires after 7 days of non-use and the next save replaces the key rather than adding a third. |
 | Artifacts per successful run | 0 bytes | **0** — confirmed through the API, not by reading the YAML: `GET /repos/shubhamdiyos/sharthi/actions/runs/41056239592/artifacts` returns `total_count: 0`. Uploads happen only on failure. |
 
-So the honest figure is **~3.2 Linux minutes per set of runs that finishes** — 110 s
-of `ci` + 51 s of `security` + 50 s of `database-migrations`, roughly a quarter of what
+So the honest figure is **~3.2 Linux minutes per set of runs that finishes** — 104 s
+of `ci` + 39 s of `security` + 50 s of `database-migrations`, roughly a quarter of what
 this file estimated before it had run once — and a commit pushed while its pull request
-is open pays that once, not twice. Budget **~5 min for a module merge**, ~6-7 min if the
-first push happened before the pull request existed and so could not be cancelled.
+is open pays more than that, because the cancelled twins are billed for the seconds they
+spent: **5.0 minutes measured** on the commit that added the `web` job. Budget **~5 min
+for a module merge**, and note that the cancelled half grows with every job added, so the
+saving from concurrency is real but smaller than the completed work suggests.
 At one module a day with three commits in it, that is **~130-180 minutes a month
 against the 2,000 free.**
 
@@ -183,11 +185,17 @@ Controls that make those numbers stay small:
 * **`timeout-minutes` on every job** (10–20), so a hung build cannot drift toward
   the 360-minute platform default.
 * **One Maven cache key, shared.** `cache-dependency-path` is scoped to
-  `services/api/pom.xml`, so the key is identical in all three jobs that need Java and
-  a job that starts after another has saved restores it instead of re-downloading the
-  graph. It also means an unrelated pom change elsewhere cannot invalidate the cached
-  Spring Boot. What it has *not* achieved is a single stored entry — see the measured
-  row in the table above; four entries exist, and the allowance absorbs them.
+  `services/api/pom.xml`, so the key is identical in all three Java jobs and a job that
+  starts after another has saved restores it instead of re-downloading the graph. It also
+  means an unrelated pom change elsewhere cannot invalidate the cached Spring Boot. What
+  it has *not* achieved is a single stored entry — see the measured row above; five
+  entries exist, and the allowance absorbs them.
+* **One npm cache key, `apps/web` only.** `setup-node` with
+  `cache-dependency-path: apps/web/package-lock.json`, so the storefront's install is
+  restored by the run after the one that saved it, and an unrelated change elsewhere in
+  the repository cannot bust it. All caching together is **7 entries, 557 MB** — 5.4 % of
+  the separate 10 GB cache allowance, and every entry expires after 7 days of non-use, so
+  the pile is bounded without a cleanup job.
 * **No Docker build in CI at all.** Nothing here builds an image: GHCR is not
   approved, so an image would be bytes that no environment runs. `verify` packages
   the jar, which is the same artifact the api image later copies.

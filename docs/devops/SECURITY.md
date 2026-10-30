@@ -143,9 +143,13 @@ declines to invent them:
 2. **Storage used by artifacts and packages**, against the 500 MB pooled allowance.
    This pipeline uploaded 0 artifacts across its first run, and no packages exist.
 3. **`gh api /repos/shubhamdiyos/sharthi/actions/caches`** — measured on 30 October:
-   **4 entries, 261 MB**, three of them under the same `setup-java-Linux-x64-maven-…`
-   key. The shared key works (a later job restores rather than re-downloads); a single
-   stored entry does not, and that is worth checking again rather than assuming fixed.
+   **7 entries, 557 MB** — five under the `setup-java-Linux-x64-maven-…` keys the Java
+   jobs share, and two of 121 MB each under the `node-cache-Linux-x64-npm-…` key for
+   `apps/web`. The shared key works (a later job restores rather than re-downloads); a
+   single stored entry does not, and that is worth checking again rather than assuming
+   fixed. The duplicate npm pair exists because the `push` and `pull_request` web jobs
+   started together on a cold cache and both finished `npm ci` before concurrency
+   cancelled the `push` run — expected, and self-limiting.
    The ceiling is a separate 10 GB per repository, and entries expire after 7 days of
    non-use, so a growing pile is bounded — but a pile of *dozens* means something changed
    and the eviction is no longer keeping up.

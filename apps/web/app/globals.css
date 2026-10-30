@@ -1,0 +1,188 @@
+/* One page, no framework. The design system proper arrives with the storefront;
+   these tokens exist so the shell reads as the same product rather than a test. */
+
+:root {
+  --ink: #16130f;
+  --ink-soft: #5b5348;
+  --paper: #faf7f1;
+  --card: #ffffff;
+  --line: #e6dfd3;
+  --accent: #0f6b4f;
+  --alarm: #a4300f;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  margin: 0 auto;
+  max-width: 46rem;
+  padding: clamp(2rem, 6vw, 4.5rem) clamp(1.25rem, 5vw, 2rem);
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  margin: 0 0 0.75rem;
+  text-transform: uppercase;
+}
+
+h1 {
+  font-size: clamp(2.5rem, 8vw, 3.75rem);
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin: 0 0 1rem;
+}
+
+.lede {
+  color: var(--ink-soft);
+  font-size: 1.0625rem;
+  margin: 0 0 2.5rem;
+  max-width: 38rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 0.875rem;
+  padding: 1.5rem;
+}
+
+.card-head {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.card-head h2 {
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.badge {
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.3rem 0.75rem;
+  white-space: nowrap;
+}
+
+.badge-up {
+  background: #e5f3ec;
+  color: var(--accent);
+}
+
+.badge-down {
+  background: #fbe9e3;
+  color: var(--alarm);
+}
+
+.facts {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.facts > div {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+}
+
+.facts dt {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+}
+
+.facts dd {
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+  text-align: right;
+}
+
+.components {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+}
+
+.components li {
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.8125rem;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+}
+
+.dot {
+  border-radius: 50%;
+  display: inline-block;
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.dot-up {
+  background: var(--accent);
+}
+
+.dot-down {
+  background: var(--alarm);
+}
+
+.note {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  margin: 1.25rem 0 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f2eee6;
+    --ink-soft: #a89f92;
+    --paper: #14120f;
+    --card: #1c1915;
+    --line: #302b24;
+    --accent: #58c39a;
+    --alarm: #f08a68;
+    color-scheme: dark;
+  }
+
+  .badge-up {
+    background: #10372a;
+  }
+
+  .badge-down {
+    background: #3d1c12;
+  }
+}
