@@ -62,7 +62,7 @@ public class SessionService {
             .principalKind(account.getKind())
             .tenantScope(singleTenantOf(live))
             .wardScope(null)
-            .merchantScope(null)
+            .merchantScope(singleMerchantOf(live))
             .createdAt(now)
             .lastSeenAt(now)
             .idleExpiresAt(now.plus(policy.idleTimeout()))
@@ -216,6 +216,20 @@ public class SessionService {
             .filter(Objects::nonNull)
             .collect(Collectors.toSet());
         return tenants.size() == 1 ? tenants.iterator().next() : null;
+    }
+
+    /**
+     * The shop a merchant member's session is bound to (§12.4), by the same one-or-none rule as
+     * the tenant. {@code merchantId} is what every {@code /m/*} endpoint checks its rows against,
+     * so a member granted two shops carries none and the portal must ask which shop it is acting
+     * for — the alternative is a session that silently picks the first shop in the list.
+     */
+    private static String singleMerchantOf(List<UserRoleGrant> live) {
+        Set<String> merchantIds = live.stream()
+            .map(UserRoleGrant::getMerchantId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        return merchantIds.size() == 1 ? merchantIds.iterator().next() : null;
     }
 
     /**
