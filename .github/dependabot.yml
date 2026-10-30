@@ -81,3 +81,19 @@ updates:
           - typescript
           - vitest
           - '@types/*'
+    # One proposal the toolchain cannot consume, measured rather than predicted.
+    # `eslint-config-next` bundles `typescript-eslint`, whose own peer range is
+    # `typescript: >=4.8.4 <6.1.0`; Dependabot's toolchain-group PR #11 rewrote
+    # `^6.0.3` to `^7.0.2`, and the run's very first gate died on it —
+    # `npm run lint` printed "typescript-eslint does not support TS 7.0" and exited 2
+    # before reading a single source file, which is a gate that has stopped gating.
+    # The range is capped at `~6.0.3` in package.json for the same reason: `^6.0.3`
+    # would let a future 6.1.0 float into a fresh install and reproduce the identical
+    # breakage, because the peer ceiling is exclusive of 6.1. Revisit only when
+    # typescript-eslint's range moves (tracked upstream in
+    # typescript-eslint/typescript-eslint#10940) — not before, because a weekly bot
+    # would otherwise keep opening a PR whose lint step is decoration.
+    ignore:
+      - dependency-name: typescript
+        versions:
+          - '>= 6.1.0'
