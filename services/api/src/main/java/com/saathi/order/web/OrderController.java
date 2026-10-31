@@ -1,6 +1,7 @@
 package com.saathi.order.web;
 
 import com.saathi.identity.session.AuthenticatedPrincipal;
+import com.saathi.order.service.OrderConsent;
 import com.saathi.order.service.OrderIntake;
 import com.saathi.order.service.OrderQueryService;
 import com.saathi.order.service.OrderViews;
@@ -35,6 +36,7 @@ public class OrderController {
 
     private final OrderIntake intake;
     private final OrderQueryService orders;
+    private final OrderConsent consent;
 
     @PostMapping(path = "/orders", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> place(@RequestHeader("Idempotency-Key") String idempotencyKey,
@@ -75,6 +77,13 @@ public class OrderController {
                                     @Valid @RequestBody(required = false) CancelRequest body,
                                     AuthenticatedPrincipal caller) {
         return orders.cancel(caller, code, body == null ? null : body.reason(), requestId());
+    }
+
+    @PostMapping("/orders/{code}/price-confirmation")
+    public OrderViews.Detail priceConfirmation(@PathVariable("code") String code,
+                                               @RequestBody OrderConsent.Body body,
+                                               AuthenticatedPrincipal caller) {
+        return consent.answer(caller, code, body, requestId());
     }
 
     /** T5's reason is optional; §6.3 requires one only for the shop's and the operator's cancels. */

@@ -3,7 +3,6 @@ package com.saathi.order.service;
 import com.saathi.cart.domain.Cart;
 import com.saathi.cart.service.CartPricing;
 import com.saathi.cart.service.CartService;
-import com.saathi.catalog.domain.Product;
 import com.saathi.identity.session.AuthenticatedPrincipal;
 import com.saathi.merchant.domain.Merchant;
 import com.saathi.order.domain.CollectionChannel;
@@ -30,11 +29,10 @@ import com.saathi.shared.error.ApiException;
 import com.saathi.shared.error.ErrorCode;
 import com.saathi.shared.id.Ulid;
 import com.saathi.shared.money.Money;
-import com.saathi.shared.outbox.OutboxRecorder;
 import com.saathi.shared.security.ContactCipher;
 import com.saathi.shared.tenant.PrincipalKind;
 import com.saathi.stock.domain.StockPolicy;
-import com.saathi.stock.service.ReservationService;
+import com.saathi.tenancy.domain.FulfilmentMode;
 import com.saathi.tenancy.domain.ServiceWard;
 import com.saathi.tenancy.domain.Tenant;
 import com.saathi.tenancy.service.ServiceabilityService;
@@ -95,10 +93,11 @@ public class OrderWriter {
     private final CartPricing pricing;
     private final QuoteService quotes;
     private final ServiceabilityService serviceability;
-    private final ReservationService reservations;
+    private final OrderStock stock;
     private final ContactCipher contactCipher;
-    private final OutboxRecorder outbox;
+    private final OrderTrail trail;
     private final OrderViews views;
+    private final OrderContacts contacts;
     private final ObjectMapper json;
     private final JdbcTemplate jdbc;
     private final Clock clock;
@@ -193,7 +192,8 @@ public class OrderWriter {
             .fulfilmentModeSnapshot(quote.getFulfilmentModeSnapshot())
             .fulfilmentLockedAt(now)
             .paymentMethod(PaymentMethod.COD)
-            .collectionChannel(collectionChannel(quote.getFulfilmentModeSnapshot()))
+            .collectionChannel(
+                CollectionChannel.forMode(FulfilmentMode.valueOf(quote.getFulfilmentModeSnapshot())))
             .paymentStatus(PaymentStatus.UNPAID)
             .settlementStatus(SettlementStatus.NOT_DUE)
             .quoteId(quote.getId())
@@ -235,44 +235,36 @@ public class OrderWriter {
         }
         lines.saveAllAndFlush(rows);
 
-        StockPolicy policy = reservations.effectivePolicy(tenant.getStockPolicy(),
-            priced.merchant().getId());
-        if (policy == StockPolicy.RESERVE_ON_PLACEMENT) {
-            Map<String, Product> products = new HashMap<>();
-            for (Product product : priced.products()) {
-                products.put(product.getId(), product);
-            }
-            for (OrderLine line : rows) {
-                Product product = products.get(line.getProductId());
-                if (product != null && product.isTrackStock()) {
-                    BigDecimal qty = line.getQtyWeighed() == null
-                        ? line.getQtyOrdered() : line.getQtyWeighed();
-                    reservations.hold(tenant.getId(), order.getId(), line.getId(),
-                        line.getProductId(), qty);
-                }
-            }
-        }
+        // §7.2's tolerance hold: a by-weight line reserves the estimate plus the band, so the shop
+        // can put a slightly bigger bag in the box without the platform discovering at weighing
+        // (§7.2) that the goods were already promised to somebody else.
+        stock.holdFor(StockPolicy.RESERVE_ON_PLACEMENT, tenant, priced.merchant().getId(), rows);
 
-        List<OrderEvent> trail = new ArrayList<>(2);
-        trail.add(event(order, null, OrderStatus.CREATED, OrderEventKind.STATUS,
-            caller.kind(), caller.accountId(), "ORDER_CREATE", now, requestId));
-        order.setStatus(OrderStatus.PENDING_CONFIRMATION);
-        orders.saveAndFlush(order);
-        trail.add(event(order, OrderStatus.CREATED, OrderStatus.PENDING_CONFIRMATION,
-            OrderEventKind.STATUS, PrincipalKind.SYSTEM, null, null, now, requestId));
-        events.saveAll(trail);
+        // T1 is the row coming into existence rather than a status moving, so the placement writes
+        // its own first event — §13.1 still wants the evidence row beside it.
+        OrderEvent created = event(order, null, OrderStatus.CREATED, OrderEventKind.STATUS,
+            caller.kind(), caller.accountId(), "ORDER_CREATE", now, requestId);
+        events.saveAndFlush(created);
+        trail.audit(order, caller.kind(), caller.accountId(), "ORDER_CREATED", null,
+            Map.of("status", OrderStatus.CREATED.name()), null, requestId, now);
+
+        // §6.3's T2 is a system edge inside the same transaction, and the order's first message.
+        OrderEvent confirmed = trail.record(OrderTrail.Edge.builder()
+            .order(order)
+            .to(OrderStatus.PENDING_CONFIRMATION)
+            .kind(OrderEventKind.STATUS)
+            .actor(PrincipalKind.SYSTEM)
+            .requestId(requestId)
+            .outboxType("ORDER_PLACED")
+            .extras(Map.of("merchant_id", order.getMerchantId()))
+            .build());
 
         carts.clearAfterOrder(tenant.getId(), cart.getId());
 
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("order_id", order.getId());
-        payload.put("code", order.getCode());
-        payload.put("total_paise", order.getTotalPaise());
-        payload.put("merchant_id", order.getMerchantId());
-        outbox.record(tenant.getId(), "order", order.getId(), "ORDER_PLACED",
-            json.writeValueAsString(payload));
-
-        OrderViews.Detail detail = views.detail(order, rows, trail, priced.merchant(), ward);
+        OrderViews.Detail detail = views.detail(order, rows, List.of(created, confirmed),
+            priced.merchant(), ward,
+            OrderViews.Viewer.CUSTOMER, null,
+            contacts.forViewer(order, OrderViews.Viewer.CUSTOMER));
         OrderViews.Placement placement = new OrderViews.Placement(detail,
             new OrderViews.AcceptedQuote(quote.getId(), quote.getState().name(),
                 quote.getAcceptedAt()));
@@ -353,11 +345,6 @@ public class OrderWriter {
         return new QuoteInput(input.tenantId(), input.cartId(), input.orderId(), input.scope(),
             input.mode(), input.deliveryFeePaise(), input.handlingFeePaise(), input.commissionPaise(),
             input.ttlMinutes(), issuedAt, input.lines(), input.consents(), input.options());
-    }
-
-    private static CollectionChannel collectionChannel(String mode) {
-        return "MERCHANT".equals(mode) ? CollectionChannel.MERCHANT_CASH
-            : CollectionChannel.RIDER_CASH;
     }
 
     private OrderEvent event(Order order, OrderStatus from, OrderStatus to, OrderEventKind kind,

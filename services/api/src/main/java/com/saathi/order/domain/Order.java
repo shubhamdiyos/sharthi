@@ -154,4 +154,23 @@ public class Order {
             || status == OrderStatus.REJECTED
             || status == OrderStatus.CANCELLED;
     }
+
+    /**
+     * Replace this order's money with a quote's figures: §6.3's T8 after a consent, and §6.2's
+     * reselect when the new fee did not raise the total.
+     *
+     * <p>Kept on the aggregate because §9.7's two identities are the order's own invariants — the
+     * total is goods plus the two fees, and only what is not collected is outstanding. A caller that
+     * set the columns one at a time could leave an order that satisfies neither for the instant
+     * before the next setter, and the database CHECK would be the first to notice.
+     */
+    public void applyMoney(long goodsPaise, long deliveryFeePaise, long handlingFeePaise,
+                           long commissionPaise) {
+        this.goodsPaise = goodsPaise;
+        this.deliveryFeePaise = deliveryFeePaise;
+        this.handlingFeePaise = handlingFeePaise;
+        this.totalPaise = Math.addExact(goodsPaise, Math.addExact(deliveryFeePaise, handlingFeePaise));
+        this.commissionPaise = commissionPaise;
+        this.outstandingPaise = this.totalPaise - this.collectedPaise;
+    }
 }

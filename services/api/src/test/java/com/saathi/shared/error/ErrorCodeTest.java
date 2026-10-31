@@ -28,6 +28,9 @@ class ErrorCodeTest {
         assertEquals(409, ErrorCode.QUOTE_STALE.statusCode());
         assertEquals(409, ErrorCode.PRICE_CONFIRMATION_REQUIRED.statusCode());
         assertEquals(409, ErrorCode.STOCK_CHANGED.statusCode());
+        assertEquals(409, ErrorCode.FULFILMENT_LOCKED.statusCode());
+        assertEquals(409, ErrorCode.MODE_NOT_AVAILABLE.statusCode());
+        assertEquals(422, ErrorCode.WEIGHT_OUT_OF_TOLERANCE.statusCode());
         assertEquals(409, ErrorCode.MIXED_MERCHANT_CART.statusCode());
         assertEquals(429, ErrorCode.OTP_THROTTLED.statusCode());
         assertEquals(423, ErrorCode.ACCOUNT_LOCKED.statusCode());
@@ -61,13 +64,15 @@ class ErrorCodeTest {
     void theTableIsNotSilentlyGrowing() {
         // 39 codes in §10.2, plus the flagged INTERNAL_ERROR gap, plus the two a staff login
         // cannot be answered without, plus the three the merchant/catalogue endpoints name in
-        // their own §10.5.6 / §10.5.8 error columns. Adding a member is a change to the API
-        // contract, and this assertion is where that has to be acknowledged first.
-        assertEquals(45, ErrorCode.values().length,
+        // their own §10.5.6 / §10.5.8 error columns, plus the three §10.5.6's order-lifecycle
+        // endpoints name. Adding a member is a change to the API contract, and this assertion is
+        // where that has to be acknowledged first.
+        assertEquals(48, ErrorCode.values().length,
             "§10.2 lists 39; INTERNAL_ERROR, INVALID_CREDENTIALS and MFA_REQUIRED are the flagged"
-                + " departures documented on the enum, and CATEGORY_NOT_ACTIVE, LICENCE_INCOMPLETE"
-                + " and NEGATIVE_STOCK are named by §10.5.6/§10.5.8. Each addition is documented"
-                + " on the enum itself.");
+                + " departures documented on the enum; CATEGORY_NOT_ACTIVE, LICENCE_INCOMPLETE and"
+                + " NEGATIVE_STOCK are named by §10.5.6/§10.5.8; and WEIGHT_OUT_OF_TOLERANCE,"
+                + " FULFILMENT_LOCKED and MODE_NOT_AVAILABLE are named by §10.5.6's lifecycle"
+                + " endpoints. Each addition is documented on the enum itself.");
         for (ErrorCode code : ErrorCode.values()) {
             assertEquals(code.name(), code.name().toUpperCase(), code + " is SCREAMING_SNAKE");
             assertTrue(code.name().matches("[A-Z][A-Z0-9_]*"), code.name());
