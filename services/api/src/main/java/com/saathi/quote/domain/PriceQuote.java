@@ -94,7 +94,8 @@ public class PriceQuote {
     @Column(name = "accepted_by", length = 26)
     private String acceptedBy;
 
-    @Column(name = "expires_at", nullable = false)
+    /** Null means this quote does not expire — a {@code WEIGHT} quote (§6.5, V7). */
+    @Column(name = "expires_at")
     private Instant expiresAt;
 
     public boolean isActive() {
@@ -103,6 +104,6 @@ public class PriceQuote {
 
     /** §8.2 / §6.5: expiry is a comparison, never a scheduled transition. */
     public boolean isExpiredAt(Instant now) {
-        return !now.isBefore(expiresAt);
+        return expiresAt != null && !now.isBefore(expiresAt);
     }
 }

@@ -63,18 +63,26 @@ public class ReservationService {
         }
     }
 
-    /** §7.2's weighing true-up: the held quantity moves to what was actually weighed. */
+    /**
+     * §7.2's weighing true-up — the only place a reservation changes size.
+     *
+     * <p>The held quantity is read from the row rather than passed in: a caller that recomputed the
+     * original hold would have to reproduce the tolerance rounding, and a reservation that drifted
+     * from {@code product.reserved_qty} by a rounding step is an inconsistency no order can be
+     * cancelled against later. Keyed by line, not product, because §7.2 reserves per order line.
+     *
+     * <p>No held row is not an error. A city on {@code FLAG_ONLY} holds nothing and its shops still
+     * weigh, so a stock policy must not decide whether T7 is available; the tolerance check that
+     * guards this call compares quantities, not holds.
+     */
     @Transactional(propagation = Propagation.MANDATORY)
-    public void trueUp(String tenantId, String orderId, String productId, BigDecimal from,
-                       BigDecimal to) {
-        book.trueUp(tenantId, productId, from, to);
-        List<StockReservation> held = ledger.openReservations(orderId);
-        for (StockReservation reservation : held) {
-            if (reservation.getProductId().equals(productId)) {
-                reservation.setQtyReserved(to);
-                return;
-            }
-        }
-        throw new IllegalStateException("no held reservation for product " + productId);
+    public void trueUp(String tenantId, String orderId, String orderLineId, BigDecimal to) {
+        ledger.openReservations(orderId).stream()
+            .filter(reservation -> reservation.getOrderLineId().equals(orderLineId))
+            .findFirst()
+            .ifPresent(held -> {
+                book.trueUp(tenantId, held.getProductId(), held.getQtyReserved(), to);
+                held.setQtyReserved(to);
+            });
     }
 }

@@ -23,9 +23,12 @@ import org.springframework.http.HttpStatus;
  * wrong" or "the password was right, now the second factor". {@code UNAUTHENTICATED} would be true
  * of both and useful for neither; {@code OTP_INVALID} would be a lie about the first. The
  * merchant/catalogue module then added {@code CATEGORY_NOT_ACTIVE}, {@code LICENCE_INCOMPLETE} and
- * {@code NEGATIVE_STOCK}, each named by an endpoint's own error column in §10.5.6 or §10.5.8.
- * Those five are the only members here that are not §10.2's list, and each is the smallest answer
- * an endpoint that exists cannot be written without.
+ * {@code NEGATIVE_STOCK}, and the order-lifecycle module {@code WEIGHT_OUT_OF_TOLERANCE},
+ * {@code FULFILMENT_LOCKED} and {@code MODE_NOT_AVAILABLE}, each named by an endpoint's own error
+ * column in §10.5.6. Those nine are the only members here that are not §10.2's list, and each is
+ * the smallest answer an endpoint that exists cannot be written without. Asking what an endpoint
+ * should return instead is a question for §10.2; refusing to answer at all is not an option the
+ * API can offer.
  */
 public enum ErrorCode {
     VALIDATION_FAILED(HttpStatus.UNPROCESSABLE_CONTENT),
@@ -69,6 +72,15 @@ public enum ErrorCode {
     CATEGORY_NOT_ACTIVE(HttpStatus.CONFLICT),
     LICENCE_INCOMPLETE(HttpStatus.UNPROCESSABLE_CONTENT),
     NEGATIVE_STOCK(HttpStatus.UNPROCESSABLE_CONTENT),
+    /**
+     * The order-lifecycle trio, each named in §10.5.6's error column and none of them in §10.2's
+     * table. {@code WEIGHT_OUT_OF_TOLERANCE} is 422 because §10.6.3 says so: the weighed quantity
+     * is well-formed input the shop is not allowed to submit, which is a different refusal from a
+     * transition that is merely too early.
+     */
+    WEIGHT_OUT_OF_TOLERANCE(HttpStatus.UNPROCESSABLE_CONTENT),
+    FULFILMENT_LOCKED(HttpStatus.CONFLICT),
+    MODE_NOT_AVAILABLE(HttpStatus.CONFLICT),
     // Not §10.2's list either — see the note above. These two are the staff-login pair.
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED),
     MFA_REQUIRED(HttpStatus.UNAUTHORIZED),

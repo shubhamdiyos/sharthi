@@ -56,9 +56,9 @@ class FoundationSchemaIT extends AbstractIntegrationTest {
             "SELECT version, script, success FROM flyway_schema_history ORDER BY installed_rank");
         // Arrays.asList and not List.of: a repeatable migration's version column is NULL, and
         // List.of throws on a null element before the assertion ever compares anything.
-        assertEquals(Arrays.asList("1", "2", "3", "4", "5", "6", null),
+        assertEquals(Arrays.asList("1", "2", "3", "4", "5", "6", "7", null),
             history.stream().map(row -> (String) row.get("version")).toList(),
-            "V1 to V6 and the pilot seed, in that order, and nothing else");
+            "V1 to V7 and the pilot seed, in that order, and nothing else");
         assertTrue(history.stream().allMatch(row -> Boolean.TRUE.equals(row.get("success"))),
             "a failed step in the IT database would be the same failure in a deployment");
         // The seed is repeatable: it is applied once here, and re-applied only when its checksum
@@ -100,7 +100,7 @@ class FoundationSchemaIT extends AbstractIntegrationTest {
         // The generator emits uppercase Crockford; the CHECK must reject everything else, or a
         // hand-inserted fixture row can be the lowercase twin of a real id.
         SQLException refused = refusal(() -> insertAudit(Ulid.next(CLOCK).toLowerCase(), Ulid.next(CLOCK),
-            "SYSTEM", null, "A", "e", "i", null, null, null, null));
+            "SYSTEM", null, "STATE_TRANSITION", "e", "i", null, null, null, null));
         assertEquals("23514", refused.getSQLState());
         assertTrue(refused.getMessage().contains("audit_event_id_ulid"), refused.getMessage());
     }
@@ -109,12 +109,12 @@ class FoundationSchemaIT extends AbstractIntegrationTest {
     void onlyASystemActorMayCarryNoIdentity() {
         String tenant = Ulid.next(CLOCK);
         assertTrue(refusal(() -> insertAudit(Ulid.next(CLOCK), tenant, "SYSTEM", "operator-9",
-            "A", "e", "i", null, null, null, null))
+            "STATE_TRANSITION", "e", "i", null, null, null, null))
             .getMessage().contains("audit_event_actor_identity"),
             "SYSTEM with an actor_id credits a person with what the platform did");
 
         assertTrue(refusal(() -> insertAudit(Ulid.next(CLOCK), tenant, "OPERATOR", null,
-            "A", "e", "i", null, null, null, null))
+            "STATE_TRANSITION", "e", "i", null, null, null, null))
             .getMessage().contains("audit_event_actor_identity"),
             "an operator row that names nobody is unattributable");
     }
@@ -122,14 +122,14 @@ class FoundationSchemaIT extends AbstractIntegrationTest {
     @Test
     void anActorTypeOutsideTheSixIsRefused() {
         assertTrue(refusal(() -> insertAudit(Ulid.next(CLOCK), Ulid.next(CLOCK), "SUPERUSER", "x",
-            "A", "e", "i", null, null, null, null))
+            "STATE_TRANSITION", "e", "i", null, null, null, null))
             .getMessage().contains("audit_event_actor_type"));
     }
 
     @Test
     void anIpHashIsSixtyFourHexCharactersOrNothing() {
         assertTrue(refusal(() -> insertAudit(Ulid.next(CLOCK), Ulid.next(CLOCK), "SYSTEM", null,
-            "A", "e", "i", null, null, "49.36.140.8", null))
+            "STATE_TRANSITION", "e", "i", null, null, "49.36.140.8", null))
             .getMessage().contains("audit_event_ip_hash_shape"),
             "a clear-text address must never fit in this column (§13.4)");
     }
@@ -158,7 +158,7 @@ class FoundationSchemaIT extends AbstractIntegrationTest {
         String id = Ulid.next(CLOCK);
         jdbc.update("""
             INSERT INTO audit_event (id, tenant_id, actor_type, action, entity, entity_id, occurred_at)
-            VALUES (?, ?, 'SYSTEM', 'A', 'e', 'i', ?)
+            VALUES (?, ?, 'SYSTEM', 'STATE_TRANSITION', 'e', 'i', ?)
             """, id, Ulid.next(CLOCK), Timestamp.from(Instant.parse("2026-10-30T20:00:00Z")));
 
         // 20:00 UTC is 01:30 in Siwan, so that request belongs to the 31st's reconciliation.
@@ -278,7 +278,7 @@ class FoundationSchemaIT extends AbstractIntegrationTest {
 
     private String auditRow() {
         String id = Ulid.next(CLOCK);
-        insertAudit(id, Ulid.next(CLOCK), "SYSTEM", null, "A", "e", "i", null, null, null, null);
+        insertAudit(id, Ulid.next(CLOCK), "SYSTEM", null, "STATE_TRANSITION", "e", "i", null, null, null, null);
         return id;
     }
 

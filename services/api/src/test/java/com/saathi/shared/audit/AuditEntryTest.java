@@ -42,6 +42,9 @@ class AuditEntryTest {
 
     @Test
     void anUnflaggedActionDoesNotInventAReasonRequirement() {
+        // §13.2 does not flag STATE_TRANSITION, and the shop's accept button has no reason behind it
+        // beyond the button itself. Demanding one would be the API inventing evidence.
+        assertDoesNotThrow(entry("STATE_TRANSITION").build()::requireReasonCode);
         assertDoesNotThrow(entry("ORDER_VIEWED").build()::requireReasonCode);
     }
 
@@ -55,12 +58,13 @@ class AuditEntryTest {
     }
 
     @Test
-    void theFlaggedSetIsTheOneFromSectionThirteenPointTwo() {
+    void theFlaggedSetIsSectionThirteenPointTwoMinusTheActionsThisBuildCannotCause() {
         assertEquals(Set.of(
             "GRANT_ADDED", "GRANT_REVOKED", "USER_DEACTIVATED", "USER_FORCE_LOGOUT", "PHONE_CHANGED",
             "JOB_DECLINED", "ASSIGN_OVERRIDE", "RIDER_LIMIT_CHANGED", "PAYOUT_TO_MERCHANT",
             "SETTLEMENT_BATCH_APPROVED", "REFUND_RECORDED", "SHORTFALL_WRITTEN_OFF", "RATE_RULE_WRITE",
-            "PII_REVEALED", "STATE_TRANSITION", "WEIGHED"), AuditEntry.REASON_CODE_REQUIRED);
+            "PII_REVEALED", "QUOTE_DECLINED", "WEIGHED", "FULFILMENT_MODE_CHANGED"),
+            AuditEntry.REASON_CODE_REQUIRED);
     }
 
     @Test

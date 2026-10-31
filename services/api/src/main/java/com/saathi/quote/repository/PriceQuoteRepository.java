@@ -2,6 +2,8 @@ package com.saathi.quote.repository;
 
 import com.saathi.quote.domain.PriceQuote;
 import com.saathi.quote.domain.QuoteState;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -16,6 +18,14 @@ public interface PriceQuoteRepository extends JpaRepository<PriceQuote, String> 
     Optional<PriceQuote> findFirstByCartIdAndStateOrderByIssuedAtDesc(String cartId, QuoteState state);
 
     Optional<PriceQuote> findFirstByOrderIdAndStateOrderByIssuedAtDesc(String orderId, QuoteState state);
+
+    /**
+     * Which of these orders hold an unanswered quote. A list needs the answer per row to compute
+     * {@code allowed_actions}, and one lookup per order would turn §10.3's single page into a round
+     * trip per row. The rows, not just their ids, because whether a quote still <em>asks</em> is a
+     * reading of its consent list ({@code QuoteService#asksTheCustomer}) and no JPQL can parse it.
+     */
+    List<PriceQuote> findByOrderIdInAndState(Collection<String> orderIds, QuoteState state);
 
     /**
      * {@code flushAutomatically} is required: the new ACTIVE row is inserted after this update, and

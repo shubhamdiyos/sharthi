@@ -30,8 +30,16 @@ public record AuditEntry(
     Instant occurredAt) {
 
     /**
-     * Actions whose reason code is mandatory (§13.2, the ⚑ marks). Enforced here rather than
-     * in each module, because a reason code that only some callers remember is not a control.
+     * The ⚑ actions of §13.2 that this build writes. Enforced here rather than in each module,
+     * because a reason code that only some callers remember is not a control. The rest of §13.2's
+     * flagged list arrives with the module that emits it — {@code JOB_FAILED}, {@code CREDIT_ISSUED}
+     * and the rest are not yet actions any endpoint can cause, and adding them to a set that nothing
+     * satisfies would only make the next module's first test fail.
+     *
+     * <p>{@code STATE_TRANSITION} is <em>not</em> flagged by §13.2, and cannot be: T3, T6, T11 and T12
+     * are the shop pressing a button that has no reason behind it beyond the button. The edges that
+     * do carry a reason — reject, cancel-after-accept, fail-delivery — are required to supply it by
+     * §6.3's own gate, where it belongs.
      */
     public static final Set<String> REASON_CODE_REQUIRED = Set.of(
         "GRANT_ADDED",
@@ -48,8 +56,9 @@ public record AuditEntry(
         "SHORTFALL_WRITTEN_OFF",
         "RATE_RULE_WRITE",
         "PII_REVEALED",
-        "STATE_TRANSITION",
-        "WEIGHED");
+        "QUOTE_DECLINED",
+        "WEIGHED",
+        "FULFILMENT_MODE_CHANGED");
 
     public void requireReasonCode() {
         if (REASON_CODE_REQUIRED.contains(action) && (reasonCode == null || reasonCode.isBlank())) {

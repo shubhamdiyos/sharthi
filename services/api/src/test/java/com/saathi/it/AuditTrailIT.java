@@ -47,14 +47,14 @@ class AuditTrailIT extends AbstractIntegrationTest {
     @Test
     void theRecorderRefusesToWriteOutsideATransaction() {
         assertThrows(IllegalTransactionStateException.class,
-            () -> recorder.record(entry("APlainAction", null)),
+            () -> recorder.record(entry("STATE_TRANSITION", null)),
             "an audit row written after the commit is evidence that can be lost");
     }
 
     @Test
     void aCommittedChangeKeepsItsRow() {
         String id = Ulid.next(UTC);
-        transactions.executeWithoutResult(status -> recorder.record(entry("APlainAction", id)));
+        transactions.executeWithoutResult(status -> recorder.record(entry("STATE_TRANSITION", id)));
 
         assertEquals(1, countRows(id), "the row commits with the change it describes");
     }
@@ -63,7 +63,7 @@ class AuditTrailIT extends AbstractIntegrationTest {
     void aRolledBackChangeLeavesNoRowBehind() {
         String id = Ulid.next(UTC);
         transactions.executeWithoutResult(status -> {
-            recorder.record(entry("APlainAction", id));
+            recorder.record(entry("STATE_TRANSITION", id));
             status.setRollbackOnly();
         });
 
