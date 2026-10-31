@@ -212,6 +212,31 @@ earlier modules, because the cart/quote/order suite adds a Flyway-recreated data
 eleven HTTP tests. The estimate before the push was ~4.5 min per set, the same shape as
 Day 1B; the measured 4.8 min per set is that growth, not a new cost source.
 
+Day 2A (PR #20) is the same one-push shape and the same nothing-red total: **652 s = 10.9
+Linux min**, 0.54 % of the allowance.
+
+| | Measured on PR #20 |
+| --- | --- |
+| Push 1 `e2b122a` | 306 s — `ci` 176 (unit 26, integration 94, web 56), `security` 39 (`dependencies` 27, `secrets` 12), Flyway 91 |
+| Merge `08559ca` on `main` | 346 s — `ci` 210 (unit 26, integration 94, web 90), `security` 40 (`dependencies` 32, `secrets` 8), Flyway 96 |
+| **The whole module** | **652 s = 10.9 Linux min**, 0.54 % of the monthly allowance |
+| Cache after the module | **16 entries, 1,379 MB** — the newest entry is still 30 October 20:23 UTC, eight and a half hours before this module's first run, because the pom and the lockfile did not move and every job re-saved a key it already had |
+| Artifacts | **0 bytes** — `GET …/actions/artifacts` still reports none |
+
+This is the first module whose whole increment is suite rather than plumbing, so the two
+rows that moved are the two that should have: **144 integration tests against 126** on the
+previous `main` run, and the job that runs them 94 s against 86 s. Eighteen new HTTP tests
+for 8 s, on a job whose fixed cost is a Flyway-recreated database, is the cheapest growth
+available here. The `web` job's 56 s and 90 s are the same tree built twice, and the whole
+34 s of that difference sits inside `npm ci` — 39 s on the PR against 65 s on `main` — while
+lint, type-check, the unit tests and the build move by a second or two apiece. Neither run
+created a cache entry, so both restored the same key: what varied is how fast a runner
+unpacks `node_modules`, not the work and not the cache. Averaged, the pair is 73 s, and this
+file's ~4.5 min per set stands rather than being revised for one slow step. The estimate
+before the push was Day 1C's 9.5 min because the trigger shape had not changed; the measured
+10.9 min is 1.4 min of suite growth on a module that added no dependency and minted no new
+cache key.
+
 At one module a working day with three pushes in it, that is **~360 minutes a month
 against the 2,000 free** — under a fifth of the allowance, and the figure to re-measure
 rather than defend.
