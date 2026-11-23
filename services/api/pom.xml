@@ -9,7 +9,7 @@
     <artifactId>spring-boot-starter-parent</artifactId>
     <!-- System Design §2.1 / D11: Spring Boot 4.1.x on Java 21 (founder decision,
          v0.2.1). Boot 4's baseline is Java 17, so 21 is inside support. -->
-    <version>4.1.2</version>
+    <version>4.2.0</version>
     <relativePath/>
   </parent>
 
